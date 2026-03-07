@@ -475,7 +475,8 @@ func (a App) View() string {
 
 // panelHeights computes the inner heights for the focused and unfocused
 // list panels. The focused panel gets roughly half the available space,
-// and the two unfocused panels share the rest equally.
+// and the two unfocused panels share the rest equally. Any remainder
+// from integer division is added to the focused panel so no rows are wasted.
 func (a App) panelHeights(availForPanels int) (focused, unfocused int) {
 	if availForPanels < 6 {
 		// Degenerate: split equally
@@ -485,6 +486,9 @@ func (a App) panelHeights(availForPanels int) (focused, unfocused int) {
 	focused = availForPanels / 2
 	remaining := availForPanels - focused
 	unfocused = remaining / 2
+	// Add any remainder from the unfocused division to the focused panel
+	// so all available rows are used (avoids blank line at the bottom).
+	focused += remaining - 2*unfocused
 	if focused < 2 {
 		focused = 2
 	}
