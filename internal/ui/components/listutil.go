@@ -6,6 +6,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// HScrollStep is how many columns H/L scroll per keypress.
+const HScrollStep = 4
+
 // HScrollContent applies horizontal scroll to multi-line rendered content.
 // It drops the first offset visible columns from each line while preserving
 // ANSI escape sequences (colors, styles).

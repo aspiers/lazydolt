@@ -46,11 +46,12 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 				m.Cursor--
 			}
 		case "H":
-			if m.HScroll > 0 {
-				m.HScroll--
+			m.HScroll -= HScrollStep
+			if m.HScroll < 0 {
+				m.HScroll = 0
 			}
 		case "L":
-			m.HScroll++
+			m.HScroll += HScrollStep
 		case "enter":
 			if h := m.selectedHash(); h != "" {
 				return m, func() tea.Msg { return ViewCommitMsg{Hash: h} }

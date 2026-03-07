@@ -47,11 +47,12 @@ func (m TablesModel) Update(msg tea.Msg) (TablesModel, tea.Cmd) {
 				m.Cursor--
 			}
 		case "H":
-			if m.HScroll > 0 {
-				m.HScroll--
+			m.HScroll -= HScrollStep
+			if m.HScroll < 0 {
+				m.HScroll = 0
 			}
 		case "L":
-			m.HScroll++
+			m.HScroll += HScrollStep
 		case " ":
 			return m, m.toggleStage()
 		case "a":

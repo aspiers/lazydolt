@@ -44,11 +44,12 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 				m.Cursor--
 			}
 		case "H":
-			if m.HScroll > 0 {
-				m.HScroll--
+			m.HScroll -= HScrollStep
+			if m.HScroll < 0 {
+				m.HScroll = 0
 			}
 		case "L":
-			m.HScroll++
+			m.HScroll += HScrollStep
 		case "enter":
 			if b := m.selectedBranch(); b != "" {
 				return m, func() tea.Msg { return CheckoutBranchMsg{Branch: b} }
