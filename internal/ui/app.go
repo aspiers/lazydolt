@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -84,6 +85,10 @@ type App struct {
 
 	// Layout
 	screenMode ScreenMode
+
+	// Loading state
+	spinner    spinner.Model
+	dataLoaded bool
 }
 
 // NewApp creates a new App with the given dolt runner.
@@ -91,6 +96,10 @@ func NewApp(runner *dolt.Runner) App {
 	ti := textinput.New()
 	ti.Placeholder = "Enter commit message..."
 	ti.CharLimit = 200
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 
 	app := App{
 		runner:      runner,
@@ -100,6 +109,7 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
+		spinner:     s,
 	}
 	app.syncFocus()
 	return app
@@ -107,7 +117,7 @@ func NewApp(runner *dolt.Runner) App {
 
 // Init loads initial data from dolt.
 func (a App) Init() tea.Cmd {
-	return a.loadData()
+	return tea.Batch(a.loadData(), a.spinner.Tick)
 }
 
 // Update handles messages.
@@ -214,7 +224,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, a.autoPreview())
 		}
 
+	case spinner.TickMsg:
+		if !a.dataLoaded {
+			var cmd tea.Cmd
+			a.spinner, cmd = a.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+
 	case DataLoadedMsg:
+		a.dataLoaded = true
 		a.statusBar.Branch = msg.Branch
 		a.statusBar.Dirty = msg.Dirty
 		a.statusBar.RepoDir = a.repoName
@@ -386,20 +404,29 @@ func (a App) View() string {
 		a.statusBar.Width = leftW - 2 // account for border
 		statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
 
+		// Loading spinner or real content for each panel
+		loading := a.loadingText()
+		panelView := func(view string) string {
+			if !a.dataLoaded {
+				return loading
+			}
+			return view
+		}
+
 		// Tables panel — title includes sub-tab indicators
 		a.tables.Height = tablesH
 		tablesTitle := fmt.Sprintf("[1]─%s", a.tabBar())
-		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, a.tables.View())
+		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, panelView(a.tables.View()))
 
 		// Branches panel
 		a.branches.Height = branchesH
 		branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
-		branchesBox := a.panelBox(components.PanelBranches, leftW, branchesH, branchesTitle, a.branches.View())
+		branchesBox := a.panelBox(components.PanelBranches, leftW, branchesH, branchesTitle, panelView(a.branches.View()))
 
 		// Commits panel
 		a.commits.Height = commitsH
 		commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-		commitsBox := a.panelBox(components.PanelCommits, leftW, commitsH, commitsTitle, a.commits.View())
+		commitsBox := a.panelBox(components.PanelCommits, leftW, commitsH, commitsTitle, panelView(a.commits.View()))
 
 		// Left column
 		left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
@@ -471,19 +498,27 @@ func (a App) panelHeights(availForPanels int) (focused, unfocused int) {
 // renderFocusedPanel renders only the currently focused left panel at the
 // given width and inner height. Used in ScreenHalf for the vertical split.
 func (a App) renderFocusedPanel(width, innerH int) string {
+	loading := a.loadingText()
+	content := func(view string) string {
+		if !a.dataLoaded {
+			return loading
+		}
+		return view
+	}
+
 	switch a.focused {
 	case components.PanelTables:
 		a.tables.Height = innerH
 		title := fmt.Sprintf("[1]─%s", a.tabBar())
-		return a.panelBox(components.PanelTables, width, innerH, title, a.tables.View())
+		return a.panelBox(components.PanelTables, width, innerH, title, content(a.tables.View()))
 	case components.PanelBranches:
 		a.branches.Height = innerH
 		title := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
-		return a.panelBox(components.PanelBranches, width, innerH, title, a.branches.View())
+		return a.panelBox(components.PanelBranches, width, innerH, title, content(a.branches.View()))
 	case components.PanelCommits:
 		a.commits.Height = innerH
 		title := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-		return a.panelBox(components.PanelCommits, width, innerH, title, a.commits.View())
+		return a.panelBox(components.PanelCommits, width, innerH, title, content(a.commits.View()))
 	default:
 		// Status panel or unknown — show status
 		a.statusBar.Width = width - 2
@@ -715,6 +750,11 @@ func (a *App) syncFocus() {
 	a.tables.Focused = a.focused == components.PanelTables
 	a.branches.Focused = a.focused == components.PanelBranches
 	a.commits.Focused = a.focused == components.PanelCommits
+}
+
+// loadingText returns the spinner animation text shown while data is loading.
+func (a App) loadingText() string {
+	return a.spinner.View() + " Loading…"
 }
 
 // --- Data loading commands ---
