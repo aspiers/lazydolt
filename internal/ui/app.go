@@ -23,6 +23,11 @@ var (
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	commitBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("5")).Padding(1, 2)
 
+	// Tab styles for the Tables panel sub-tab bar
+	activeTabStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")) // bold green
+	inactiveTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim
+	tabSepStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim separator
+
 	// Main (right) panel has no left border — the left column's right
 	// border serves as the shared divider, eliminating the double ││.
 	mainBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true, true, true, false)
@@ -530,17 +535,18 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 }
 
 // tabBar renders the sub-tab indicator for the Tables panel title.
-// Active tab is highlighted, e.g. "[Status] - Browse - Schema".
+// Active tab is bold green, inactive tabs are dim, separated by " - ".
 func (a App) tabBar() string {
+	sep := tabSepStyle.Render(" - ")
 	var parts []string
 	for i, name := range mainViewTabNames {
 		if MainView(i) == a.mainView {
-			parts = append(parts, "["+name+"]")
+			parts = append(parts, activeTabStyle.Render(name))
 		} else {
-			parts = append(parts, name)
+			parts = append(parts, inactiveTabStyle.Render(name))
 		}
 	}
-	return strings.Join(parts, " - ")
+	return strings.Join(parts, sep)
 }
 
 // --- Layout helpers ---
@@ -610,11 +616,13 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 	if maxTitleW < 3 {
 		maxTitleW = 3
 	}
-	if len(title) > maxTitleW {
-		title = title[:maxTitleW-1] + "…"
-	}
 
+	// Title may already contain ANSI codes (e.g. coloured tab bar),
+	// so use ANSI-aware width and truncation.
 	titleRendered := titleStyle.Render(title)
+	if lipgloss.Width(titleRendered) > maxTitleW {
+		titleRendered = ansi.Truncate(titleRendered, maxTitleW-1, "…")
+	}
 
 	// Fixed parts: "╭─" (2 chars) + title + fill + "╮" (1 char)
 	titleVisualW := lipgloss.Width(titleRendered)
