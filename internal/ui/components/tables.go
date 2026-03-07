@@ -159,27 +159,23 @@ func (m TablesModel) renderHeader(s section) string {
 	return headerStyle.Render(fmt.Sprintf("%s %s (%d)", arrow, name, count))
 }
 
-// renderTable renders a single table line with its status marker.
+// renderTable renders a single table line with a change-type indicator.
+// Since grouping already shows staged vs unstaged, only the operation
+// type is shown: M(odified), A(dded), D(eleted).
 func (m TablesModel) renderTable(t *domain.Table) string {
-	marker := "  "
+	marker := " "
 	markerFn := normalStyle.Render
 
 	if t.Status != nil {
-		switch {
-		case t.Status.Staged && (t.Status.Status == "new table"):
-			marker = "A "
-			markerFn = stagedNewStyle.Render
-		case t.Status.Staged:
-			marker = "SM"
-			markerFn = stagedNewStyle.Render
-		case t.Status.Status == "modified":
-			marker = "M "
+		switch t.Status.Status {
+		case "modified":
+			marker = "M"
 			markerFn = modifiedStyle.Render
-		case t.Status.Status == "new table":
-			marker = "? "
-			markerFn = modifiedStyle.Render
-		case t.Status.Status == "deleted":
-			marker = "D "
+		case "new table":
+			marker = "A"
+			markerFn = stagedNewStyle.Render
+		case "deleted":
+			marker = "D"
 			markerFn = deletedStyle.Render
 		}
 	}
