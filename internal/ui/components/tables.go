@@ -66,8 +66,7 @@ func (m TablesModel) View() string {
 		return "No tables"
 	}
 
-	// Height - 1 accounts for the title line rendered by the parent.
-	start, end := visibleRange(m.Cursor, len(m.Tables), m.Height-1)
+	start, end := visibleRange(m.Cursor, len(m.Tables), m.Height)
 
 	var s string
 	for i := start; i < end; i++ {

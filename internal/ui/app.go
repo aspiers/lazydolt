@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	focusedBorder  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6"))
-	blurredBorder  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8"))
+	focusedBorder  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("2"))
+	blurredBorder  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 	titleStyle     = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	commitBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("5")).Padding(1, 2)
@@ -277,7 +277,7 @@ func (a App) View() string {
 	//
 	// So: (statusH+2) + 3*(panelH+2) + 1 = a.height
 	//     statusH + 3*panelH + 9 = a.height
-	const statusInnerH = 3 // "Status" title + branch line + dirty marker
+	const statusInnerH = 2 // branch line + dirty marker (title is in border)
 	const borderH = 2      // top + bottom border per panel
 	const hintsH = 1       // key hints bar
 
@@ -298,23 +298,22 @@ func (a App) View() string {
 
 	// Status bar
 	a.statusBar.Width = leftW - 4 // account for border
-	statusContent := titleStyle.Render("Status") + "\n" + a.statusBar.View()
-	statusBox := a.panelBox(-1, leftW, statusInnerH, statusContent) // -1 = never focused
+	statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
 
 	// Tables panel
 	a.tables.Height = panelH
-	tablesTitle := fmt.Sprintf("Tables (%d)", len(a.tables.Tables))
-	tablesBox := a.panelBox(components.PanelTables, leftW, panelH, titleStyle.Render(tablesTitle)+"\n"+a.tables.View())
+	tablesTitle := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
+	tablesBox := a.panelBox(components.PanelTables, leftW, panelH, tablesTitle, a.tables.View())
 
 	// Branches panel
 	a.branches.Height = panelH
-	branchesTitle := fmt.Sprintf("Branches (%d)", len(a.branches.Branches))
-	branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, titleStyle.Render(branchesTitle)+"\n"+a.branches.View())
+	branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
+	branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, branchesTitle, a.branches.View())
 
 	// Commits panel
 	a.commits.Height = panelH
-	commitsTitle := fmt.Sprintf("Commits (%d)", len(a.commits.Commits))
-	commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, titleStyle.Render(commitsTitle)+"\n"+a.commits.View())
+	commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
+	commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, commitsTitle, a.commits.View())
 
 	// Left column
 	left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
@@ -322,9 +321,13 @@ func (a App) View() string {
 	// Main panel — same outer height as left column
 	mainTitle := a.mainPanelTitle()
 	mainContent := a.mainPanelContent()
-	mainBox := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(
-		titleStyle.Render(mainTitle) + "\n" + mainContent,
-	)
+	mainRendered := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+	// Embed title in the top border
+	mainLines := strings.Split(mainRendered, "\n")
+	if len(mainLines) > 0 {
+		mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
+	}
+	mainBox := strings.Join(mainLines, "\n")
 
 	// Join left and main
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
@@ -362,7 +365,7 @@ func (a App) leftColumnWidth() int {
 	return w
 }
 
-func (a App) panelBox(panel components.Panel, width, height int, content string) string {
+func (a App) panelBox(panel components.Panel, width, height int, title, content string) string {
 	style := blurredBorder
 	if panel == a.focused {
 		style = focusedBorder
@@ -371,7 +374,46 @@ func (a App) panelBox(panel components.Panel, width, height int, content string)
 	// Lipgloss Height() sets minimum height but doesn't clip overflow.
 	// Truncate content to the panel height accounting for line wrapping.
 	content = truncateToVisualHeight(content, height, innerW)
-	return style.Width(innerW).Height(height).Render(content)
+	rendered := style.Width(innerW).Height(height).Render(content)
+
+	if title == "" {
+		return rendered
+	}
+
+	// Replace the top border line with one that embeds the title.
+	// Rendered first line looks like: "╭──────...──────╮"
+	// We want:                        "╭─ Title ──...──╮"
+	lines := strings.Split(rendered, "\n")
+	if len(lines) > 0 {
+		isFocused := panel == a.focused
+		lines[0] = buildTitleBorder(title, innerW+2, isFocused)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// buildTitleBorder creates a top border line with an embedded title.
+// Format: ╭─[1]─Title───────────╮  (lazygit style: no spaces, bold+green when focused)
+func buildTitleBorder(title string, totalWidth int, focused bool) string {
+	var borderStyle, titleStyle lipgloss.Style
+	if focused {
+		borderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+	} else {
+		borderStyle = lipgloss.NewStyle()
+		titleStyle = lipgloss.NewStyle().Bold(true)
+	}
+	titleRendered := titleStyle.Render(title)
+
+	// Fixed parts: "╭─" (2 chars) + title + fill + "╮" (1 char)
+	titleVisualW := lipgloss.Width(titleRendered)
+	fillCount := totalWidth - 2 - titleVisualW - 1
+	if fillCount < 1 {
+		fillCount = 1
+	}
+
+	return borderStyle.Render("╭─") +
+		titleRendered +
+		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
 }
 
 // truncateToVisualHeight clips content to at most maxLines visual lines,

@@ -59,8 +59,7 @@ func (m CommitsModel) View() string {
 		return "No commits"
 	}
 
-	// Height - 1 accounts for the title line rendered by the parent.
-	start, end := visibleRange(m.Cursor, len(m.Commits), m.Height-1)
+	start, end := visibleRange(m.Cursor, len(m.Commits), m.Height)
 
 	var s string
 	for i := start; i < end; i++ {

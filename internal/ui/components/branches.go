@@ -63,8 +63,7 @@ func (m BranchesModel) View() string {
 		return "No branches"
 	}
 
-	// Height - 1 accounts for the title line rendered by the parent.
-	start, end := visibleRange(m.Cursor, len(m.Branches), m.Height-1)
+	start, end := visibleRange(m.Cursor, len(m.Branches), m.Height)
 
 	var s string
 	for i := start; i < end; i++ {
