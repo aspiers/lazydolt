@@ -1,11 +1,11 @@
 package components
 
 import (
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/golden"
 	"github.com/muesli/termenv"
 
 	"github.com/aspiers/lazydolt/internal/domain"
@@ -183,54 +183,23 @@ func TestTablesModel_SelectedTableEmpty(t *testing.T) {
 
 func TestTablesModel_ViewEmptyList(t *testing.T) {
 	m := newTablesModel(nil, 0, true)
-	if got := m.View(); got != "No tables" {
-		t.Errorf("View() = %q, want %q", got, "No tables")
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestTablesModel_ViewShowsSectionHeaders(t *testing.T) {
 	m := newTablesModel(sampleTables(), 0, false)
-	view := m.View()
-
-	for _, header := range []string{"Unstaged changes (1)", "Staged changes (1)", "Clean (1)"} {
-		if !strings.Contains(view, header) {
-			t.Errorf("View() should contain header %q, got:\n%s", header, view)
-		}
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestTablesModel_ViewShowsTableNames(t *testing.T) {
 	m := newTablesModel(sampleTables(), -1, false)
-	view := m.View()
-
-	for _, name := range []string{"users", "orders", "products"} {
-		if !strings.Contains(view, name) {
-			t.Errorf("View() should contain table name %q", name)
-		}
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestTablesModel_ViewCollapsedSection(t *testing.T) {
 	m := newTablesModel(sampleTables(), 0, false)
 	m.Collapsed = map[section]bool{sectionUnstaged: true}
-	view := m.View()
-
-	// Header should still show
-	if !strings.Contains(view, "Unstaged changes") {
-		t.Error("collapsed section header should still be visible")
-	}
-	// Collapsed arrow
-	if !strings.Contains(view, "▶") {
-		t.Error("collapsed section should show ▶ arrow")
-	}
-	// Table under collapsed section should be hidden
-	if strings.Contains(view, "users") {
-		t.Error("table under collapsed section should be hidden")
-	}
-	// Other sections should still show their tables
-	if !strings.Contains(view, "orders") {
-		t.Error("tables in other sections should be visible")
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestTablesModel_ViewStatusMarkers(t *testing.T) {
@@ -243,14 +212,7 @@ func TestTablesModel_ViewStatusMarkers(t *testing.T) {
 		{Name: "clean"},
 	}
 	m := newTablesModel(tables, -1, false) // no cursor highlight
-	view := m.View()
-
-	// Check each table line contains its name
-	for _, tbl := range tables {
-		if !strings.Contains(view, tbl.Name) {
-			t.Errorf("View() should contain table name %q", tbl.Name)
-		}
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestTablesModel_DisplayItems(t *testing.T) {

@@ -1,0 +1,9 @@
+[1m▼ Unstaged changes (3)[0m
+  [33mM[0m modified_unstaged
+  [31mD[0m deleted
+  [32mA[0m new_unstaged
+[1m▼ Staged changes (2)[0m
+  [32mA[0m new_staged
+  [33mM[0m modified_staged
+[1m▼ Clean (1)[0m
+    clean

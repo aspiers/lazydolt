@@ -3,6 +3,8 @@ package components
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/exp/golden"
 )
 
 // Note: init() in diffview_test.go sets lipgloss.SetColorProfile(termenv.ANSI)
@@ -16,33 +18,7 @@ func TestBrowserView_RenderTable_Basic(t *testing.T) {
 		{"id": float64(2), "name": "Bob", "email": "bob@example.com"},
 	}
 	bv.SetData("users", columns, rows, 2, 0)
-
-	content := bv.Viewport.View()
-
-	// Should contain table name and row count
-	if !strings.Contains(content, "users (2 rows)") {
-		t.Errorf("expected 'users (2 rows)' in output, got:\n%s", content)
-	}
-
-	// Should contain column headers
-	for _, col := range columns {
-		if !strings.Contains(content, col) {
-			t.Errorf("expected column %q in output, got:\n%s", col, content)
-		}
-	}
-
-	// Should contain data values
-	if !strings.Contains(content, "Alice") {
-		t.Errorf("expected 'Alice' in output, got:\n%s", content)
-	}
-	if !strings.Contains(content, "Bob") {
-		t.Errorf("expected 'Bob' in output, got:\n%s", content)
-	}
-
-	// Should contain separators
-	if !strings.Contains(content, "+") {
-		t.Errorf("expected '+' separators in output, got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_RenderTable_NullValues(t *testing.T) {
@@ -52,24 +28,13 @@ func TestBrowserView_RenderTable_NullValues(t *testing.T) {
 		{"id": float64(1)}, // name is missing (NULL)
 	}
 	bv.SetData("users", columns, rows, 1, 0)
-
-	content := bv.Viewport.View()
-
-	// NULL should appear in the output (possibly with styling)
-	if !strings.Contains(content, "NULL") {
-		t.Errorf("expected 'NULL' for missing value, got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_RenderTable_Empty(t *testing.T) {
 	bv := NewBrowserView(80, 20)
 	bv.SetData("empty_table", nil, nil, 0, 0)
-
-	content := bv.Viewport.View()
-
-	if !strings.Contains(content, "No data to display") {
-		t.Errorf("expected 'No data to display', got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_Pagination(t *testing.T) {
@@ -112,12 +77,7 @@ func TestBrowserView_PaginationFooter(t *testing.T) {
 		{"id": float64(1)},
 	}
 	bv.SetData("big_table", columns, rows, 25, 0)
-
-	content := bv.Viewport.View()
-
-	if !strings.Contains(content, "Page 1/3") {
-		t.Errorf("expected 'Page 1/3' in output, got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_NoPaginationFooterForSinglePage(t *testing.T) {
@@ -129,12 +89,7 @@ func TestBrowserView_NoPaginationFooterForSinglePage(t *testing.T) {
 		{"id": float64(1)},
 	}
 	bv.SetData("small_table", columns, rows, 1, 0)
-
-	content := bv.Viewport.View()
-
-	if strings.Contains(content, "Page") {
-		t.Errorf("expected no pagination footer for single page, got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_ColumnWidthTruncation(t *testing.T) {
@@ -145,18 +100,7 @@ func TestBrowserView_ColumnWidthTruncation(t *testing.T) {
 		{"data": longVal},
 	}
 	bv.SetData("test", columns, rows, 1, 0)
-
-	content := bv.Viewport.View()
-
-	// Should contain truncation marker
-	if !strings.Contains(content, "...") {
-		t.Errorf("expected '...' truncation for long value, got:\n%s", content)
-	}
-
-	// Should NOT contain the full 60-char value
-	if strings.Contains(content, longVal) {
-		t.Errorf("expected long value to be truncated, but found full value in output")
-	}
+	golden.RequireEqual(t, bv.Viewport.View())
 }
 
 func TestBrowserView_CalcColWidths(t *testing.T) {
@@ -208,9 +152,5 @@ func TestBrowserView_BuildRow(t *testing.T) {
 
 func TestBrowserView_DefaultContent(t *testing.T) {
 	bv := NewBrowserView(80, 20)
-	content := bv.View()
-
-	if !strings.Contains(content, "Select a table and press Enter to browse data") {
-		t.Errorf("expected default content message, got:\n%s", content)
-	}
+	golden.RequireEqual(t, bv.View())
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/aspiers/lazydolt/internal/domain"
 )
@@ -106,7 +107,5 @@ func TestCommitsModel_ViewTruncatesMessage(t *testing.T) {
 
 func TestCommitsModel_ViewEmptyList(t *testing.T) {
 	m := newCommitsModel(nil, 0, true)
-	if got := m.View(); got != "No commits" {
-		t.Errorf("View() = %q, want %q", got, "No commits")
-	}
+	golden.RequireEqual(t, m.View())
 }

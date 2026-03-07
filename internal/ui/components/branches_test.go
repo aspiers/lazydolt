@@ -1,10 +1,10 @@
 package components
 
 import (
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/aspiers/lazydolt/internal/domain"
 )
@@ -101,24 +101,15 @@ func TestBranchesModel_DeleteBranch(t *testing.T) {
 
 func TestBranchesModel_ViewCurrentBranchMarker(t *testing.T) {
 	m := newBranchesModel(sampleBranches(), -1, false)
-	view := m.View()
-	if !strings.Contains(view, "* ") {
-		t.Error("View() should contain '* ' prefix for current branch")
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestBranchesModel_ViewEmptyList(t *testing.T) {
 	m := newBranchesModel(nil, 0, true)
-	if got := m.View(); got != "No branches" {
-		t.Errorf("View() = %q, want %q", got, "No branches")
-	}
+	golden.RequireEqual(t, m.View())
 }
 
 func TestBranchesModel_ViewShowsHashPrefix(t *testing.T) {
 	m := newBranchesModel(sampleBranches(), -1, false)
-	view := m.View()
-	// Hash should be truncated to 7 chars
-	if !strings.Contains(view, "abc1234") {
-		t.Error("View() should contain truncated hash 'abc1234'")
-	}
+	golden.RequireEqual(t, m.View())
 }

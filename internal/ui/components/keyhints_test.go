@@ -1,40 +1,25 @@
 package components
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/exp/golden"
 )
 
 func TestRenderKeyHints_TablesPanelHints(t *testing.T) {
-	got := RenderKeyHints(PanelTables, 120)
-	for _, expected := range []string{"stage", "tab", "stage all"} {
-		if !strings.Contains(got, expected) {
-			t.Errorf("RenderKeyHints(PanelTables) should contain %q, got %q", expected, got)
-		}
-	}
-	// At wide width, all hints should fit including quit
-	wide := RenderKeyHints(PanelTables, 200)
-	if !strings.Contains(wide, "quit") {
-		t.Errorf("RenderKeyHints(PanelTables, 200) should contain %q, got %q", "quit", wide)
-	}
+	golden.RequireEqual(t, RenderKeyHints(PanelTables, 120))
+}
+
+func TestRenderKeyHints_TablesPanelHintsWide(t *testing.T) {
+	golden.RequireEqual(t, RenderKeyHints(PanelTables, 200))
 }
 
 func TestRenderKeyHints_BranchesPanelHints(t *testing.T) {
-	got := RenderKeyHints(PanelBranches, 120)
-	for _, expected := range []string{"checkout", "new", "delete", "quit"} {
-		if !strings.Contains(got, expected) {
-			t.Errorf("RenderKeyHints(PanelBranches) should contain %q, got %q", expected, got)
-		}
-	}
+	golden.RequireEqual(t, RenderKeyHints(PanelBranches, 120))
 }
 
 func TestRenderKeyHints_CommitsPanelHints(t *testing.T) {
-	got := RenderKeyHints(PanelCommits, 120)
-	for _, expected := range []string{"details", "quit"} {
-		if !strings.Contains(got, expected) {
-			t.Errorf("RenderKeyHints(PanelCommits) should contain %q, got %q", expected, got)
-		}
-	}
+	golden.RequireEqual(t, RenderKeyHints(PanelCommits, 120))
 }
 
 func TestRenderKeyHints_Truncation(t *testing.T) {
