@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aspiers/lazydolt/internal/dolt"
 	"github.com/aspiers/lazydolt/internal/ui/components"
@@ -394,8 +395,11 @@ func (a App) panelBox(panel components.Panel, width, height int, title, content 
 		style = focusedBorder
 	}
 	innerW := width - 4 // account for border+padding
+	// Clip each line to the panel width to prevent wrapping.
+	// Users can H/L scroll to see truncated content.
+	content = clipLines(content, innerW)
 	// Lipgloss Height() sets minimum height but doesn't clip overflow.
-	// Truncate content to the panel height accounting for line wrapping.
+	// Truncate content to the panel height.
 	content = truncateToVisualHeight(content, height, innerW)
 	rendered := style.Width(innerW).Height(height).Render(content)
 
@@ -437,6 +441,22 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 	return borderStyle.Render("╭─") +
 		titleRendered +
 		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
+}
+
+// clipLines truncates each line of content to maxWidth visible columns,
+// preserving ANSI escape sequences. This prevents lipgloss from wrapping
+// long lines within bordered panels.
+func clipLines(content string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if lipgloss.Width(line) > maxWidth {
+			lines[i] = ansi.Truncate(line, maxWidth, "")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // truncateToVisualHeight clips content to at most maxLines visual lines,
