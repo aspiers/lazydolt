@@ -1,5 +1,25 @@
 package components
 
+import (
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+)
+
+// HScrollContent applies horizontal scroll to multi-line rendered content.
+// It drops the first offset visible columns from each line while preserving
+// ANSI escape sequences (colors, styles).
+func HScrollContent(content string, offset int) string {
+	if offset <= 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.TruncateLeft(line, offset, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // visibleRange computes the start (inclusive) and end (exclusive) indices
 // for a scrollable list so that the cursor is always visible within the
 // given viewHeight. If the list is shorter than the view, all items are

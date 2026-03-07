@@ -34,6 +34,9 @@ func RenderKeyHints(panel Panel, width int) string {
 
 func hintsForPanel(panel Panel) []KeyHint {
 	global := []KeyHint{
+		{Key: "+/_", Desc: "zoom"},
+		{Key: "H/L", Desc: "scroll"},
+		{Key: "Esc", Desc: "back"},
 		{Key: "c", Desc: "commit"},
 		{Key: "?", Desc: "help"},
 		{Key: "q", Desc: "quit"},

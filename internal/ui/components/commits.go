@@ -22,6 +22,7 @@ type CommitsModel struct {
 	Cursor  int
 	Focused bool
 	Height  int
+	HScroll int // horizontal scroll offset (columns)
 }
 
 // Init is a no-op.
@@ -44,6 +45,12 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 			if m.Cursor > 0 {
 				m.Cursor--
 			}
+		case "H":
+			if m.HScroll > 0 {
+				m.HScroll--
+			}
+		case "L":
+			m.HScroll++
 		case "enter":
 			if h := m.selectedHash(); h != "" {
 				return m, func() tea.Msg { return ViewCommitMsg{Hash: h} }
@@ -86,7 +93,7 @@ func (m CommitsModel) View() string {
 		s += line + "\n"
 	}
 
-	return s
+	return HScrollContent(s, m.HScroll)
 }
 
 func (m CommitsModel) selectedHash() string {

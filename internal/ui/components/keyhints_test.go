@@ -7,10 +7,15 @@ import (
 
 func TestRenderKeyHints_TablesPanelHints(t *testing.T) {
 	got := RenderKeyHints(PanelTables, 120)
-	for _, expected := range []string{"stage", "diff", "schema", "browse", "quit"} {
+	for _, expected := range []string{"stage", "diff", "schema", "browse"} {
 		if !strings.Contains(got, expected) {
 			t.Errorf("RenderKeyHints(PanelTables) should contain %q, got %q", expected, got)
 		}
+	}
+	// At wide width, all hints should fit including quit
+	wide := RenderKeyHints(PanelTables, 200)
+	if !strings.Contains(wide, "quit") {
+		t.Errorf("RenderKeyHints(PanelTables, 200) should contain %q, got %q", "quit", wide)
 	}
 }
 

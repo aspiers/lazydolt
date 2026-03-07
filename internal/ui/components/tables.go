@@ -23,6 +23,7 @@ type TablesModel struct {
 	Cursor  int
 	Focused bool
 	Height  int
+	HScroll int // horizontal scroll offset (columns)
 }
 
 // Init is a no-op.
@@ -45,6 +46,12 @@ func (m TablesModel) Update(msg tea.Msg) (TablesModel, tea.Cmd) {
 			if m.Cursor > 0 {
 				m.Cursor--
 			}
+		case "H":
+			if m.HScroll > 0 {
+				m.HScroll--
+			}
+		case "L":
+			m.HScroll++
 		case " ":
 			return m, m.toggleStage()
 		case "a":
@@ -101,7 +108,7 @@ func (m TablesModel) View() string {
 		s += line + "\n"
 	}
 
-	return s
+	return HScrollContent(s, m.HScroll)
 }
 
 // SelectedTable returns the currently selected table name, or empty string.

@@ -246,7 +246,18 @@ bd uses a Dolt database backend (no SQLite/JSONL sync). To back up issues into g
 
 ```bash
 bd export -o .beads/issues.jsonl
-git add .beads/issues.jsonl && git commit -m "Export beads"
+git add .beads/issues.jsonl
+```
+
+**IMPORTANT**: Never commit the beads export as a separate commit. Always include
+`.beads/issues.jsonl` in the same commit as the code change that resolved or
+updated the bead. For example:
+
+```bash
+bd close <id> --reason "Done"
+bd export -o .beads/issues.jsonl
+git add .beads/issues.jsonl src/changed-file.go
+git commit -m "feat: implement feature X"
 ```
 
 This project has no Dolt remote configured, so `bd dolt push`/`pull` are not available.
@@ -277,10 +288,15 @@ For more details, see README.md and docs/QUICKSTART.md.
    ```bash
    git pull --rebase
    bd export -o .beads/issues.jsonl
-   git add .beads/issues.jsonl && git commit -m "Export beads"
+   git add .beads/issues.jsonl
+   git commit -m "chore: export beads"  # ONLY if no other pending commit to include it in
    git push
    git status  # MUST show "up to date with origin"
    ```
+   **Note:** Prefer including `.beads/issues.jsonl` in the same commit as
+   the code change that resolved or updated the bead. Only create a
+   standalone "export beads" commit if there is no related code commit
+   to bundle it with.
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
 7. **Hand off** - Provide context for next session

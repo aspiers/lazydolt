@@ -30,6 +30,16 @@ const (
 	MainViewBrowser
 )
 
+// ScreenMode controls the column split ratio (like lazygit's +/_ cycling).
+type ScreenMode int
+
+const (
+	ScreenNormal     ScreenMode = iota // default split (~30% left)
+	ScreenHalf                         // roughly 50/50
+	ScreenFullscreen                   // focused column takes 100%
+	screenModeCount                    // sentinel for wrapping
+)
+
 // App is the root Bubble Tea model.
 type App struct {
 	runner   *dolt.Runner
@@ -63,8 +73,8 @@ type App struct {
 	// Help
 	showHelp bool
 
-	// Layout: left column width as percentage (10-70)
-	leftColPct int
+	// Layout
+	screenMode ScreenMode
 }
 
 // NewApp creates a new App with the given dolt runner.
@@ -81,7 +91,6 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
-		leftColPct:  30,
 	}
 	app.syncFocus()
 	return app
@@ -119,6 +128,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return a, tea.Quit
+		case "esc":
+			// Esc goes back: zoom → normal, or reset main view to auto-diff
+			if a.screenMode != ScreenNormal {
+				a.screenMode = ScreenNormal
+				return a, nil
+			}
+			// If viewing non-default content, reset to auto-diff
+			if a.mainView != MainViewDiff {
+				a.mainView = MainViewDiff
+				return a, a.autoViewDiff()
+			}
+			return a, nil
 		case "tab":
 			a.cycleFocus()
 			return a, a.autoViewDiff()
@@ -133,18 +154,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "c":
 			return a, a.startCommit()
-		case "<":
-			if a.leftColPct > 15 {
-				a.leftColPct -= 5
-			}
+		case "+":
+			a.screenMode = (a.screenMode + 1) % screenModeCount
 			return a, nil
-		case ">":
-			if a.leftColPct < 60 {
-				a.leftColPct += 5
-			}
-			return a, nil
-		case "=":
-			a.leftColPct = 30
+		case "_":
+			a.screenMode = (a.screenMode + screenModeCount - 1) % screenModeCount
 			return a, nil
 		case "?":
 			a.showHelp = true
@@ -289,12 +303,6 @@ func (a App) View() string {
 
 	// Main panel inner height = left column outer height minus its own border
 	mainInnerH := leftOuterH - borderH
-	mainInnerW := a.width - leftW - 4
-
-	// Update viewport sizes
-	a.diffView.SetSize(mainInnerW, mainInnerH-1) // -1 for title line
-	a.schemaView.SetSize(mainInnerW, mainInnerH-1)
-	a.browserView.SetSize(mainInnerW, mainInnerH-1)
 
 	// Status bar
 	a.statusBar.Width = leftW - 4 // account for border
@@ -318,19 +326,28 @@ func (a App) View() string {
 	// Left column
 	left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
 
-	// Main panel — same outer height as left column
-	mainTitle := a.mainPanelTitle()
-	mainContent := a.mainPanelContent()
-	mainRendered := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
-	// Embed title in the top border
-	mainLines := strings.Split(mainRendered, "\n")
-	if len(mainLines) > 0 {
-		mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
-	}
-	mainBox := strings.Join(mainLines, "\n")
+	var body string
+	if a.screenMode == ScreenFullscreen {
+		// Fullscreen: only left column visible
+		body = left
+	} else {
+		// Normal/half: show both columns
+		mainInnerW := a.width - leftW - 4
+		a.diffView.SetSize(mainInnerW, mainInnerH-1)
+		a.schemaView.SetSize(mainInnerW, mainInnerH-1)
+		a.browserView.SetSize(mainInnerW, mainInnerH-1)
 
-	// Join left and main
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
+		mainTitle := a.mainPanelTitle()
+		mainContent := a.mainPanelContent()
+		mainRendered := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+		// Embed title in the top border
+		mainLines := strings.Split(mainRendered, "\n")
+		if len(mainLines) > 0 {
+			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
+		}
+		mainBox := strings.Join(mainLines, "\n")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
+	}
 
 	// Key hints
 	hints := components.RenderKeyHints(a.focused, a.width)
@@ -353,16 +370,22 @@ func (a App) View() string {
 // --- Layout helpers ---
 
 func (a App) leftColumnWidth() int {
-	w := a.width * a.leftColPct / 100
-	if w < 24 {
-		w = 24
+	switch a.screenMode {
+	case ScreenHalf:
+		return a.width / 2
+	case ScreenFullscreen:
+		return a.width
+	default: // ScreenNormal
+		w := a.width * 30 / 100
+		if w < 24 {
+			w = 24
+		}
+		maxW := a.width - 30
+		if w > maxW {
+			w = maxW
+		}
+		return w
 	}
-	// Don't let either column get too narrow
-	maxW := a.width - 30
-	if w > maxW {
-		w = maxW
-	}
-	return w
 }
 
 func (a App) panelBox(panel components.Panel, width, height int, title, content string) string {
