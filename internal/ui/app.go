@@ -859,6 +859,13 @@ func (a *App) autoViewDiff() tea.Cmd {
 	if a.focused != components.PanelTables {
 		return nil
 	}
+	// On a section header, show all diffs for that section
+	if a.tables.IsOnHeader() {
+		if a.tables.IsOnCleanHeader() {
+			return nil
+		}
+		return a.loadDiff("", a.tables.SelectedIsStaged())
+	}
 	table := a.tables.SelectedTable()
 	if table == "" {
 		return nil
@@ -885,6 +892,13 @@ func (a App) focusedCursor() int {
 func (a *App) autoPreview() tea.Cmd {
 	switch a.focused {
 	case components.PanelTables:
+		// On a section header, show all diffs for that section
+		if a.tables.IsOnHeader() {
+			if a.mainView == MainViewDiff && !a.tables.IsOnCleanHeader() {
+				return a.loadDiff("", a.tables.SelectedIsStaged())
+			}
+			return nil
+		}
 		table := a.tables.SelectedTable()
 		if table == "" {
 			return nil
@@ -910,12 +924,20 @@ func (a *App) autoPreview() tea.Cmd {
 
 func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	runner := a.runner
+	label := table
+	if label == "" {
+		if staged {
+			label = "all staged"
+		} else {
+			label = "all unstaged"
+		}
+	}
 	return func() tea.Msg {
 		content, err := runner.DiffText(table, staged)
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}
-		return DiffContentMsg{Table: table, Content: content}
+		return DiffContentMsg{Table: label, Content: content}
 	}
 }
 

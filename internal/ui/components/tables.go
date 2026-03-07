@@ -255,9 +255,41 @@ func (m TablesModel) SelectedTable() string {
 }
 
 // SelectedIsStaged returns true if the selected table is a staged change.
+// Also returns true when the Staged changes section header is selected.
 func (m TablesModel) SelectedIsStaged() bool {
+	// Check if on a staged section header
+	if sec, ok := m.SelectedSection(); ok {
+		return sec == sectionStaged
+	}
 	e := m.selectedEntry()
 	return e != nil && e.Staged
+}
+
+// SelectedSection returns the section of the currently selected header,
+// and true if the cursor is on a section header. Returns false if the
+// cursor is on a table row or out of bounds.
+func (m TablesModel) SelectedSection() (section, bool) {
+	items := m.displayItems()
+	if m.Cursor < 0 || m.Cursor >= len(items) {
+		return 0, false
+	}
+	item := items[m.Cursor]
+	if !item.isHeader {
+		return 0, false
+	}
+	return item.section, true
+}
+
+// IsOnHeader returns true if the cursor is on a section header.
+func (m TablesModel) IsOnHeader() bool {
+	_, ok := m.SelectedSection()
+	return ok
+}
+
+// IsOnCleanHeader returns true if the cursor is on the Clean section header.
+func (m TablesModel) IsOnCleanHeader() bool {
+	sec, ok := m.SelectedSection()
+	return ok && sec == sectionClean
 }
 
 // selectedEntry returns the StatusEntry for the table under the cursor,
