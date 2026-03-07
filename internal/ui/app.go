@@ -69,7 +69,7 @@ func NewApp(runner *dolt.Runner) App {
 	ti.Placeholder = "Enter commit message..."
 	ti.CharLimit = 200
 
-	return App{
+	app := App{
 		runner:      runner,
 		repoName:    filepath.Base(runner.RepoDir),
 		focused:     components.PanelTables,
@@ -77,6 +77,8 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		commitInput: ti,
 	}
+	app.syncFocus()
+	return app
 }
 
 // Init loads initial data from dolt.
@@ -269,19 +271,16 @@ func (a App) View() string {
 	statusBox := a.panelBox(-1, leftW, statusInnerH, statusContent) // -1 = never focused
 
 	// Tables panel
-	a.tables.Focused = a.focused == components.PanelTables
 	a.tables.Height = panelH
 	tablesTitle := fmt.Sprintf("Tables (%d)", len(a.tables.Tables))
 	tablesBox := a.panelBox(components.PanelTables, leftW, panelH, titleStyle.Render(tablesTitle)+"\n"+a.tables.View())
 
 	// Branches panel
-	a.branches.Focused = a.focused == components.PanelBranches
 	a.branches.Height = panelH
 	branchesTitle := fmt.Sprintf("Branches (%d)", len(a.branches.Branches))
 	branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, titleStyle.Render(branchesTitle)+"\n"+a.branches.View())
 
 	// Commits panel
-	a.commits.Focused = a.focused == components.PanelCommits
 	a.commits.Height = panelH
 	commitsTitle := fmt.Sprintf("Commits (%d)", len(a.commits.Commits))
 	commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, titleStyle.Render(commitsTitle)+"\n"+a.commits.View())
@@ -377,10 +376,19 @@ func (a *App) cycleFocus() {
 	case components.PanelCommits:
 		a.focused = components.PanelTables
 	}
+	a.syncFocus()
 }
 
 func (a *App) setFocus(p components.Panel) {
 	a.focused = p
+	a.syncFocus()
+}
+
+// syncFocus updates the Focused field on all panel models to match a.focused.
+func (a *App) syncFocus() {
+	a.tables.Focused = a.focused == components.PanelTables
+	a.branches.Focused = a.focused == components.PanelBranches
+	a.commits.Focused = a.focused == components.PanelCommits
 }
 
 // --- Data loading commands ---
