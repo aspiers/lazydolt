@@ -171,6 +171,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.mainView = MainViewDiff
 			}
 			return a, a.autoPreview()
+		case "shift+tab":
+			a.cycleFocusReverse()
+			if a.focused != components.PanelTables {
+				a.mainView = MainViewDiff
+			}
+			return a, a.autoPreview()
 		case "1":
 			if a.focused == components.PanelTables {
 				// Already on Tables — cycle to next tab
@@ -751,6 +757,18 @@ func (a *App) cycleFocus() {
 	a.syncFocus()
 }
 
+func (a *App) cycleFocusReverse() {
+	switch a.focused {
+	case components.PanelTables:
+		a.focused = components.PanelCommits
+	case components.PanelBranches:
+		a.focused = components.PanelTables
+	case components.PanelCommits:
+		a.focused = components.PanelBranches
+	}
+	a.syncFocus()
+}
+
 func (a *App) setFocus(p components.Panel) {
 	a.focused = p
 	a.syncFocus()
@@ -1087,7 +1105,7 @@ func (a App) renderHelp() string {
 
   Global
     q / Ctrl+C    Quit
-    Tab           Next panel
+    Tab / S-Tab   Next / previous panel
     1-3           Jump to panel
     c             Commit
     + / _         Zoom panel

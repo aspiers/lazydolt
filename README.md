@@ -47,7 +47,7 @@ lazydolt /path/to/dolt/repo
 | Key | Action |
 |-----|--------|
 | `q` / `Ctrl+C` | Quit |
-| `Tab` | Next panel |
+| `Tab` / `Shift+Tab` | Next / previous panel |
 | `1`-`3` | Jump to panel |
 | `c` | Commit |
 | `+` / `_` | Zoom panel |
