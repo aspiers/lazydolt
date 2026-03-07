@@ -20,6 +20,10 @@ var (
 	titleStyle     = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	commitBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("5")).Padding(1, 2)
+
+	// Main (right) panel has no left border — the left column's right
+	// border serves as the shared divider, eliminating the double ││.
+	mainBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true, true, true, false)
 )
 
 // MainView tracks which content is shown in the right panel.
@@ -306,7 +310,7 @@ func (a App) View() string {
 	mainInnerH := leftOuterH - borderH
 
 	// Status bar
-	a.statusBar.Width = leftW - 4 // account for border
+	a.statusBar.Width = leftW - 2 // account for border
 	statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
 
 	// Tables panel
@@ -332,19 +336,21 @@ func (a App) View() string {
 		// Fullscreen: only left column visible
 		body = left
 	} else {
-		// Normal/half: show both columns
-		mainInnerW := a.width - leftW - 4
+		// Normal/half: show both columns.
+		// The main panel has no left border (shared with left column's
+		// right border), so only the right border adds 1 char.
+		mainInnerW := a.width - leftW - 1
 		a.diffView.SetSize(mainInnerW, mainInnerH-1)
 		a.schemaView.SetSize(mainInnerW, mainInnerH-1)
 		a.browserView.SetSize(mainInnerW, mainInnerH-1)
 
 		mainTitle := a.mainPanelTitle()
 		mainContent := a.mainPanelContent()
-		mainRendered := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
-		// Embed title in the top border
+		mainRendered := mainBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+		// Embed title in the top border (no left corner)
 		mainLines := strings.Split(mainRendered, "\n")
 		if len(mainLines) > 0 {
-			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
+			mainLines[0] = buildMainTitleBorder(mainTitle, mainInnerW+1)
 		}
 		mainBox := strings.Join(mainLines, "\n")
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
@@ -394,7 +400,7 @@ func (a App) panelBox(panel components.Panel, width, height int, title, content 
 	if panel == a.focused {
 		style = focusedBorder
 	}
-	innerW := width - 4 // account for border+padding
+	innerW := width - 2 // account for border (1 char each side)
 	// Clip each line to the panel width to prevent wrapping.
 	// Users can H/L scroll to see truncated content.
 	content = clipLines(content, innerW)
@@ -439,6 +445,25 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 	}
 
 	return borderStyle.Render("╭─") +
+		titleRendered +
+		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
+}
+
+// buildMainTitleBorder creates a top border for the main (right) panel
+// which has no left border. Format: ─Title───────────╮
+func buildMainTitleBorder(title string, totalWidth int) string {
+	borderStyle := lipgloss.NewStyle()
+	titleStyle := lipgloss.NewStyle().Bold(true)
+	titleRendered := titleStyle.Render(title)
+
+	// Fixed parts: "─" (1 char) + title + fill + "╮" (1 char)
+	titleVisualW := lipgloss.Width(titleRendered)
+	fillCount := totalWidth - 1 - titleVisualW - 1
+	if fillCount < 1 {
+		fillCount = 1
+	}
+
+	return borderStyle.Render("─") +
 		titleRendered +
 		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
 }
