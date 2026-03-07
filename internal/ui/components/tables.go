@@ -256,6 +256,12 @@ func (m TablesModel) SelectedTable() string {
 	return item.table.Name
 }
 
+// SelectedIsStaged returns true if the selected table is a staged change.
+func (m TablesModel) SelectedIsStaged() bool {
+	e := m.selectedEntry()
+	return e != nil && e.Staged
+}
+
 // selectedEntry returns the StatusEntry for the table under the cursor,
 // or nil if the cursor is on a header or clean table.
 func (m TablesModel) selectedEntry() *domain.StatusEntry {

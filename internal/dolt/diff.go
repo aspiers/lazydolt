@@ -2,8 +2,13 @@ package dolt
 
 // DiffText returns the human-readable diff output for a table.
 // If table is empty, diffs all changed tables.
-func (r *Runner) DiffText(table string) (string, error) {
+// If staged is true, shows the diff between HEAD and the staging area
+// (i.e. what would be committed); otherwise shows unstaged changes.
+func (r *Runner) DiffText(table string, staged bool) (string, error) {
 	args := []string{"diff"}
+	if staged {
+		args = append(args, "--staged")
+	}
 	if table != "" {
 		args = append(args, table)
 	}
@@ -18,8 +23,12 @@ func (r *Runner) DiffText(table string) (string, error) {
 
 // DiffStat returns diff statistics for a table.
 // If table is empty, returns stats for all changed tables.
-func (r *Runner) DiffStat(table string) (string, error) {
+// If staged is true, shows stats for staged changes.
+func (r *Runner) DiffStat(table string, staged bool) (string, error) {
 	args := []string{"diff", "--stat"}
+	if staged {
+		args = append(args, "--staged")
+	}
 	if table != "" {
 		args = append(args, table)
 	}

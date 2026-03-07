@@ -279,7 +279,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stageAllMsg:
 		cmds = append(cmds, a.stageAllCmd())
 	case viewDiffMsg:
-		cmds = append(cmds, a.loadDiff(msg.Table))
+		cmds = append(cmds, a.loadDiff(msg.Table, a.tables.SelectedIsStaged()))
 	case viewSchemaMsg:
 		cmds = append(cmds, a.loadSchema(msg.Table))
 	case viewTableDataMsg:
@@ -845,7 +845,7 @@ func (a *App) autoViewDiff() tea.Cmd {
 	if table == "" {
 		return nil
 	}
-	return a.loadDiff(table)
+	return a.loadDiff(table, a.tables.SelectedIsStaged())
 }
 
 // focusedCursor returns the cursor position of the currently focused panel.
@@ -877,7 +877,7 @@ func (a *App) autoPreview() tea.Cmd {
 		case MainViewBrowser:
 			return a.loadTableData(table)
 		default:
-			return a.loadDiff(table)
+			return a.loadDiff(table, a.tables.SelectedIsStaged())
 		}
 	case components.PanelCommits:
 		hash := a.commits.SelectedHash()
@@ -890,10 +890,10 @@ func (a *App) autoPreview() tea.Cmd {
 	}
 }
 
-func (a *App) loadDiff(table string) tea.Cmd {
+func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	runner := a.runner
 	return func() tea.Msg {
-		content, err := runner.DiffText(table)
+		content, err := runner.DiffText(table, staged)
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}

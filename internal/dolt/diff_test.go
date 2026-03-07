@@ -10,7 +10,7 @@ func TestDiffText_ModifiedTable(t *testing.T) {
 	runner, repo := newTestRunner(t)
 	testutil.PopulateTestData(repo) // users has an uncommitted row
 
-	diff, err := runner.DiffText("users")
+	diff, err := runner.DiffText("users", false)
 	if err != nil {
 		t.Fatalf("DiffText(users): %v", err)
 	}
@@ -25,7 +25,7 @@ func TestDiffText_NoChanges(t *testing.T) {
 	repo.SQL("CREATE TABLE clean (id INT PRIMARY KEY)")
 	repo.Commit("add clean table")
 
-	diff, err := runner.DiffText("clean")
+	diff, err := runner.DiffText("clean", false)
 	if err != nil {
 		t.Fatalf("DiffText(clean): %v", err)
 	}
@@ -34,11 +34,26 @@ func TestDiffText_NoChanges(t *testing.T) {
 	}
 }
 
+func TestDiffText_Staged(t *testing.T) {
+	runner, repo := newTestRunner(t)
+	testutil.PopulateTestData(repo)
+	// Stage the users table
+	repo.Exec("add", "users")
+
+	diff, err := runner.DiffText("users", true)
+	if err != nil {
+		t.Fatalf("DiffText(users, staged): %v", err)
+	}
+	if diff == "" {
+		t.Error("DiffText(users, staged) returned empty string, expected staged diff content")
+	}
+}
+
 func TestDiffStat_HasStats(t *testing.T) {
 	runner, repo := newTestRunner(t)
 	testutil.PopulateTestData(repo)
 
-	stat, err := runner.DiffStat("users")
+	stat, err := runner.DiffStat("users", false)
 	if err != nil {
 		t.Fatalf("DiffStat(users): %v", err)
 	}
