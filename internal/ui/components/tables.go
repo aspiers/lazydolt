@@ -164,8 +164,7 @@ func (m TablesModel) renderHeader(s section, selected bool) string {
 // renderTable renders a single table line with a change-type indicator.
 // Since grouping already shows staged vs unstaged, only the operation
 // type is shown: M(odified), A(dded), D(eleted).
-// When selected is true, Reverse(true) is composed into each segment's
-// style to avoid embedded ANSI resets breaking the highlight.
+// When selected, only the table name is highlighted (not the marker).
 func (m TablesModel) renderTable(t *domain.Table, selected bool) string {
 	marker := " "
 	markerStyle := normalStyle
@@ -185,8 +184,7 @@ func (m TablesModel) renderTable(t *domain.Table, selected bool) string {
 	}
 
 	if selected {
-		markerStyle = markerStyle.Reverse(true)
-		return markerStyle.Render("  "+marker) + selectedStyle.Render(" "+t.Name)
+		return fmt.Sprintf("  %s %s", markerStyle.Render(marker), selectedStyle.Render(t.Name))
 	}
 	return fmt.Sprintf("  %s %s", markerStyle.Render(marker), t.Name)
 }
