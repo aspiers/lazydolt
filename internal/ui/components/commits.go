@@ -2,7 +2,9 @@ package components
 
 import (
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -85,7 +87,7 @@ func (m CommitsModel) View() string {
 		line := fmt.Sprintf("%s %s %s %s",
 			commitHashStyle.Render(hash),
 			msg,
-			commitAuthorStyle.Render(c.Author),
+			commitAuthorStyle.Render(initials(c.Author)),
 			commitDateStyle.Render(relativeTime(c.Date)),
 		)
 		if i == m.Cursor && m.Focused {
@@ -107,6 +109,27 @@ func (m CommitsModel) SelectedHash() string {
 
 // Message types for parent to handle.
 type ViewCommitMsg struct{ Hash string }
+
+// initials extracts uppercase initials from a name, e.g.
+// "Adam Spiers" → "AS", "alice" → "A".
+func initials(name string) string {
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return "?"
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		r, _ := utf8.DecodeRuneInString(p)
+		if r != utf8.RuneError {
+			b.WriteRune(r)
+		}
+	}
+	result := strings.ToUpper(b.String())
+	if result == "" {
+		return "?"
+	}
+	return result
+}
 
 // relativeTime formats a time as a human-readable relative string.
 func relativeTime(t time.Time) string {
