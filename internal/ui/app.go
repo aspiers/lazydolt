@@ -283,77 +283,111 @@ func (a App) View() string {
 		return a.renderHelp()
 	}
 
-	leftW := a.leftColumnWidth()
-
-	// Height budget: terminal height minus 1 row for the key hints bar.
-	// Each bordered panel adds 2 rows (top + bottom border) beyond its
-	// inner content height.  The left column has 4 panels (status + 3 lists).
-	//
-	// Layout:  statusBox(inner=statusH, outer=statusH+2)
-	//        + 3 * listBox(inner=panelH, outer=panelH+2)
-	//        + hintsBar(1 row)
-	//        = a.height
-	//
-	// So: (statusH+2) + 3*(panelH+2) + 1 = a.height
-	//     statusH + 3*panelH + 9 = a.height
 	const statusInnerH = 2 // branch line + dirty marker (title is in border)
 	const borderH = 2      // top + bottom border per panel
 	const hintsH = 1       // key hints bar
 
-	availForPanels := a.height - hintsH - (statusInnerH + borderH) - 3*borderH
-	panelH := max(2, availForPanels/3)
-
-	// Total outer height of the left column
-	leftOuterH := (statusInnerH + borderH) + 3*(panelH+borderH)
-
-	// Main panel inner height = left column outer height minus its own border
-	mainInnerH := leftOuterH - borderH
-
-	// Status bar
-	a.statusBar.Width = leftW - 2 // account for border
-	statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
-
-	// Tables panel
-	a.tables.Height = panelH
-	tablesTitle := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
-	tablesBox := a.panelBox(components.PanelTables, leftW, panelH, tablesTitle, a.tables.View())
-
-	// Branches panel
-	a.branches.Height = panelH
-	branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
-	branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, branchesTitle, a.branches.View())
-
-	// Commits panel
-	a.commits.Height = panelH
-	commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-	commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, commitsTitle, a.commits.View())
-
-	// Left column
-	left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
-
 	var body string
-	if a.screenMode == ScreenFullscreen {
-		// Fullscreen: only left column visible
-		body = left
-	} else {
-		// Normal/half: show both columns.
-		// The main panel has no left border (shared with left column's
-		// right border), so only the right border adds 1 char.
-		mainInnerW := a.width - leftW - 1
-		a.diffView.SetSize(mainInnerW, mainInnerH-1)
-		a.schemaView.SetSize(mainInnerW, mainInnerH-1)
-		a.browserView.SetSize(mainInnerW, mainInnerH-1)
+
+	if a.screenMode == ScreenHalf {
+		// Half mode: vertical split — focused left panel on top,
+		// main panel on bottom, both full terminal width.
+		topH := (a.height - hintsH) / 2 // roughly half the screen
+		topInnerH := topH - borderH
+		if topInnerH < 2 {
+			topInnerH = 2
+		}
+		botOuterH := a.height - hintsH - topH
+		botInnerH := botOuterH - borderH
+		if botInnerH < 2 {
+			botInnerH = 2
+		}
+
+		topBox := a.renderFocusedPanel(a.width, topInnerH)
+
+		mainInnerW := a.width - 2
+		a.diffView.SetSize(mainInnerW, botInnerH-1)
+		a.schemaView.SetSize(mainInnerW, botInnerH-1)
+		a.browserView.SetSize(mainInnerW, botInnerH-1)
 
 		mainTitle := a.mainPanelTitle()
 		mainContent := a.mainPanelContent()
-		mainRendered := mainBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
-		// Embed title in the top border (no left corner)
+		mainRendered := blurredBorder.Width(mainInnerW).Height(botInnerH).Render(mainContent)
 		mainLines := strings.Split(mainRendered, "\n")
 		if len(mainLines) > 0 {
-			mainLines[0] = buildMainTitleBorder(mainTitle, mainInnerW+1)
+			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
 		}
 		mainBox := strings.Join(mainLines, "\n")
-		body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
+
+		body = topBox + "\n" + mainBox
+	} else {
+		leftW := a.leftColumnWidth()
+
+		// Height budget: terminal height minus 1 row for the key hints bar.
+		// Each bordered panel adds 2 rows (top + bottom border) beyond its
+		// inner content height.  The left column has 4 panels (status + 3 lists).
+		//
+		// Layout:  statusBox(inner=statusH, outer=statusH+2)
+		//        + 3 * listBox(inner=panelH, outer=panelH+2)
+		//        + hintsBar(1 row)
+		//        = a.height
+		//
+		// So: (statusH+2) + 3*(panelH+2) + 1 = a.height
+		//     statusH + 3*panelH + 9 = a.height
+		availForPanels := a.height - hintsH - (statusInnerH + borderH) - 3*borderH
+		panelH := max(2, availForPanels/3)
+
+		// Total outer height of the left column
+		leftOuterH := (statusInnerH + borderH) + 3*(panelH+borderH)
+
+		// Main panel inner height = left column outer height minus its own border
+		mainInnerH := leftOuterH - borderH
+
+		// Status bar
+		a.statusBar.Width = leftW - 2 // account for border
+		statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
+
+		// Tables panel
+		a.tables.Height = panelH
+		tablesTitle := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
+		tablesBox := a.panelBox(components.PanelTables, leftW, panelH, tablesTitle, a.tables.View())
+
+		// Branches panel
+		a.branches.Height = panelH
+		branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
+		branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, branchesTitle, a.branches.View())
+
+		// Commits panel
+		a.commits.Height = panelH
+		commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
+		commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, commitsTitle, a.commits.View())
+
+		// Left column
+		left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
+
+		if a.screenMode == ScreenFullscreen {
+			// Fullscreen: only left column visible
+			body = left
+		} else {
+			// Normal: side-by-side columns.
+			// The main panel has no left border (shared with left column's
+			// right border), so only the right border adds 1 char.
+			mainInnerW := a.width - leftW - 1
+			a.diffView.SetSize(mainInnerW, mainInnerH-1)
+			a.schemaView.SetSize(mainInnerW, mainInnerH-1)
+			a.browserView.SetSize(mainInnerW, mainInnerH-1)
+
+			mainTitle := a.mainPanelTitle()
+			mainContent := a.mainPanelContent()
+			mainRendered := mainBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+			// Embed title in the top border (no left corner)
+			mainLines := strings.Split(mainRendered, "\n")
+			if len(mainLines) > 0 {
+				mainLines[0] = buildMainTitleBorder(mainTitle, mainInnerW+1)
+			}
+			mainBox := strings.Join(mainLines, "\n")
+			body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
+		}
 	}
 
 	// Key hints
@@ -372,6 +406,29 @@ func (a App) View() string {
 	}
 
 	return result
+}
+
+// renderFocusedPanel renders only the currently focused left panel at the
+// given width and inner height. Used in ScreenHalf for the vertical split.
+func (a App) renderFocusedPanel(width, innerH int) string {
+	switch a.focused {
+	case components.PanelTables:
+		a.tables.Height = innerH
+		title := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
+		return a.panelBox(components.PanelTables, width, innerH, title, a.tables.View())
+	case components.PanelBranches:
+		a.branches.Height = innerH
+		title := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
+		return a.panelBox(components.PanelBranches, width, innerH, title, a.branches.View())
+	case components.PanelCommits:
+		a.commits.Height = innerH
+		title := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
+		return a.panelBox(components.PanelCommits, width, innerH, title, a.commits.View())
+	default:
+		// Status panel or unknown — show status
+		a.statusBar.Width = width - 2
+		return a.panelBox(-1, width, innerH, "Status", a.statusBar.View())
+	}
 }
 
 // --- Layout helpers ---
