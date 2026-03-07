@@ -13,7 +13,7 @@ Built with Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea) and
 - **Schema viewer** — syntax-highlighted CREATE TABLE statements
 - **Table data browser** — paginated, formatted table viewer
 - **Commit dialog** — stage changes and commit from the TUI
-- **Resizable layout** — adjust column widths with `<` / `>` keys
+- **Zoomable layout** — zoom panels with `+` / `_` keys
 
 ## Requirements
 
