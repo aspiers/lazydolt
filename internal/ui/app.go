@@ -339,10 +339,24 @@ func (a App) View() string {
 		// So: (statusH+2) + 3*(panelH+2) + 1 = a.height
 		//     statusH + 3*panelH + 9 = a.height
 		availForPanels := a.height - hintsH - (statusInnerH + borderH) - 3*borderH
-		panelH := max(2, availForPanels/3)
+
+		// The focused panel gets more height; the other two share
+		// the remainder equally (like lazygit's auto-grow behavior).
+		focusedH, unfocusedH := a.panelHeights(availForPanels)
+
+		heightFor := func(panel components.Panel) int {
+			if panel == a.focused {
+				return focusedH
+			}
+			return unfocusedH
+		}
+
+		tablesH := heightFor(components.PanelTables)
+		branchesH := heightFor(components.PanelBranches)
+		commitsH := heightFor(components.PanelCommits)
 
 		// Total outer height of the left column
-		leftOuterH := (statusInnerH + borderH) + 3*(panelH+borderH)
+		leftOuterH := (statusInnerH + borderH) + (tablesH + borderH) + (branchesH + borderH) + (commitsH + borderH)
 
 		// Main panel inner height = left column outer height minus its own border
 		mainInnerH := leftOuterH - borderH
@@ -352,19 +366,19 @@ func (a App) View() string {
 		statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
 
 		// Tables panel
-		a.tables.Height = panelH
+		a.tables.Height = tablesH
 		tablesTitle := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
-		tablesBox := a.panelBox(components.PanelTables, leftW, panelH, tablesTitle, a.tables.View())
+		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, a.tables.View())
 
 		// Branches panel
-		a.branches.Height = panelH
+		a.branches.Height = branchesH
 		branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
-		branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, branchesTitle, a.branches.View())
+		branchesBox := a.panelBox(components.PanelBranches, leftW, branchesH, branchesTitle, a.branches.View())
 
 		// Commits panel
-		a.commits.Height = panelH
+		a.commits.Height = commitsH
 		commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-		commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, commitsTitle, a.commits.View())
+		commitsBox := a.panelBox(components.PanelCommits, leftW, commitsH, commitsTitle, a.commits.View())
 
 		// Left column
 		left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
@@ -410,6 +424,27 @@ func (a App) View() string {
 	}
 
 	return result
+}
+
+// panelHeights computes the inner heights for the focused and unfocused
+// list panels. The focused panel gets roughly half the available space,
+// and the two unfocused panels share the rest equally.
+func (a App) panelHeights(availForPanels int) (focused, unfocused int) {
+	if availForPanels < 6 {
+		// Degenerate: split equally
+		h := max(2, availForPanels/3)
+		return h, h
+	}
+	focused = availForPanels / 2
+	remaining := availForPanels - focused
+	unfocused = remaining / 2
+	if focused < 2 {
+		focused = 2
+	}
+	if unfocused < 2 {
+		unfocused = 2
+	}
+	return focused, unfocused
 }
 
 // renderFocusedPanel renders only the currently focused left panel at the
