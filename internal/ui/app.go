@@ -530,7 +530,7 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 }
 
 // tabBar renders the sub-tab indicator for the Tables panel title.
-// Active tab is highlighted, e.g. "[Status] Browse Schema".
+// Active tab is highlighted, e.g. "[Status] - Browse - Schema".
 func (a App) tabBar() string {
 	var parts []string
 	for i, name := range mainViewTabNames {
@@ -540,7 +540,7 @@ func (a App) tabBar() string {
 			parts = append(parts, name)
 		}
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " - ")
 }
 
 // --- Layout helpers ---
