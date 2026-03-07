@@ -116,17 +116,15 @@ func (m TablesModel) View() string {
 	var s string
 	for i := start; i < end; i++ {
 		item := items[i]
+		selected := i == m.Cursor && m.Focused
 		var line string
 
 		if item.isHeader {
-			line = m.renderHeader(item.section)
+			line = m.renderHeader(item.section, selected)
 		} else {
-			line = m.renderTable(item.table)
+			line = m.renderTable(item.table, selected)
 		}
 
-		if i == m.Cursor && m.Focused {
-			line = selectedStyle.Render(line)
-		}
 		s += line + "\n"
 	}
 
@@ -134,7 +132,7 @@ func (m TablesModel) View() string {
 }
 
 // renderHeader renders a section header line like "▼ Unstaged (2)".
-func (m TablesModel) renderHeader(s section) string {
+func (m TablesModel) renderHeader(s section, selected bool) string {
 	unstaged, staged, clean := m.groupTables()
 
 	var name string
@@ -156,31 +154,41 @@ func (m TablesModel) renderHeader(s section) string {
 		arrow = "▶"
 	}
 
-	return headerStyle.Render(fmt.Sprintf("%s %s (%d)", arrow, name, count))
+	style := headerStyle
+	if selected {
+		style = style.Reverse(true)
+	}
+	return style.Render(fmt.Sprintf("%s %s (%d)", arrow, name, count))
 }
 
 // renderTable renders a single table line with a change-type indicator.
 // Since grouping already shows staged vs unstaged, only the operation
 // type is shown: M(odified), A(dded), D(eleted).
-func (m TablesModel) renderTable(t *domain.Table) string {
+// When selected is true, Reverse(true) is composed into each segment's
+// style to avoid embedded ANSI resets breaking the highlight.
+func (m TablesModel) renderTable(t *domain.Table, selected bool) string {
 	marker := " "
-	markerFn := normalStyle.Render
+	markerStyle := normalStyle
 
 	if t.Status != nil {
 		switch t.Status.Status {
 		case "modified":
 			marker = "M"
-			markerFn = modifiedStyle.Render
+			markerStyle = modifiedStyle
 		case "new table":
 			marker = "A"
-			markerFn = stagedNewStyle.Render
+			markerStyle = stagedNewStyle
 		case "deleted":
 			marker = "D"
-			markerFn = deletedStyle.Render
+			markerStyle = deletedStyle
 		}
 	}
 
-	return fmt.Sprintf("  %s %s", markerFn(marker), t.Name)
+	if selected {
+		markerStyle = markerStyle.Reverse(true)
+		return markerStyle.Render("  "+marker) + selectedStyle.Render(" "+t.Name)
+	}
+	return fmt.Sprintf("  %s %s", markerStyle.Render(marker), t.Name)
 }
 
 // groupTables splits the Tables slice into unstaged, staged, and clean groups.

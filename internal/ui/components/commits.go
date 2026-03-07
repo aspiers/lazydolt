@@ -74,6 +74,8 @@ func (m CommitsModel) View() string {
 	var s string
 	for i := start; i < end; i++ {
 		c := m.Commits[i]
+		selected := i == m.Cursor && m.Focused
+
 		hash := c.Hash
 		if len(hash) > 7 {
 			hash = hash[:7]
@@ -84,14 +86,23 @@ func (m CommitsModel) View() string {
 			msg = msg[:37] + "..."
 		}
 
-		line := fmt.Sprintf("%s %s %s %s",
-			commitHashStyle.Render(hash),
-			msg,
-			commitAuthorStyle.Render(initials(c.Author)),
-			commitDateStyle.Render(relativeTime(c.Date)),
-		)
-		if i == m.Cursor && m.Focused {
-			line = selectedStyle.Render(line)
+		var line string
+		if selected {
+			hStyle := commitHashStyle.Reverse(true)
+			aStyle := commitAuthorStyle.Reverse(true)
+			dStyle := commitDateStyle.Reverse(true)
+			sp := selectedStyle.Render(" ")
+			line = hStyle.Render(hash) + sp +
+				selectedStyle.Render(msg) + sp +
+				aStyle.Render(initials(c.Author)) + sp +
+				dStyle.Render(relativeTime(c.Date))
+		} else {
+			line = fmt.Sprintf("%s %s %s %s",
+				commitHashStyle.Render(hash),
+				msg,
+				commitAuthorStyle.Render(initials(c.Author)),
+				commitDateStyle.Render(relativeTime(c.Date)),
+			)
 		}
 		s += line + "\n"
 	}

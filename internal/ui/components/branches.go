@@ -76,6 +76,8 @@ func (m BranchesModel) View() string {
 	var s string
 	for i := start; i < end; i++ {
 		b := m.Branches[i]
+		selected := i == m.Cursor && m.Focused
+
 		prefix := "  "
 		nameStyle := normalStyle
 		if b.IsCurrent {
@@ -84,8 +86,12 @@ func (m BranchesModel) View() string {
 		}
 
 		hash := ""
+		hStyle := hashStyle
 		if len(b.Hash) >= 7 {
-			hash = hashStyle.Render(b.Hash[:7])
+			if selected {
+				hStyle = hStyle.Reverse(true)
+			}
+			hash = hStyle.Render(b.Hash[:7])
 		}
 
 		msg := b.LatestMessage
@@ -93,11 +99,18 @@ func (m BranchesModel) View() string {
 			msg = msg[:27] + "..."
 		}
 
-		line := fmt.Sprintf("%s%s %s %s", prefix, nameStyle.Render(b.Name), hash, hashStyle.Render(msg))
-		if i == m.Cursor && m.Focused {
-			line = selectedStyle.Render(line)
+		if selected {
+			nameStyle = nameStyle.Reverse(true)
+			sp := selectedStyle.Render(" ")
+			line := selectedStyle.Render(prefix) +
+				nameStyle.Render(b.Name) + sp +
+				hash + sp +
+				hashStyle.Reverse(true).Render(msg)
+			s += line + "\n"
+		} else {
+			line := fmt.Sprintf("%s%s %s %s", prefix, nameStyle.Render(b.Name), hash, hashStyle.Render(msg))
+			s += line + "\n"
 		}
-		s += line + "\n"
 	}
 
 	return HScrollContent(s, m.HScroll)
