@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aspiers/lazydolt/internal/dolt"
+	"github.com/aspiers/lazydolt/internal/domain"
 	"github.com/aspiers/lazydolt/internal/ui/components"
 )
 
@@ -760,18 +761,66 @@ func (a App) loadingText() string {
 func (a *App) loadData() tea.Cmd {
 	runner := a.runner
 	return func() tea.Msg {
-		branch, _ := runner.CurrentBranch()
-		dirty, _ := runner.IsDirty()
-		tables, _ := runner.Tables()
-		branches, _ := runner.Branches()
-		commits, _ := runner.Log(50)
+		type branchResult struct {
+			branch string
+			err    error
+		}
+		type tablesResult struct {
+			tables []domain.Table
+			err    error
+		}
+		type branchesResult struct {
+			branches []domain.Branch
+			err      error
+		}
+		type commitsResult struct {
+			commits []domain.Commit
+			err     error
+		}
+
+		branchCh := make(chan branchResult, 1)
+		tablesCh := make(chan tablesResult, 1)
+		branchesCh := make(chan branchesResult, 1)
+		commitsCh := make(chan commitsResult, 1)
+
+		go func() {
+			b, err := runner.CurrentBranch()
+			branchCh <- branchResult{b, err}
+		}()
+		go func() {
+			t, err := runner.Tables()
+			tablesCh <- tablesResult{t, err}
+		}()
+		go func() {
+			br, err := runner.Branches()
+			branchesCh <- branchesResult{br, err}
+		}()
+		go func() {
+			c, err := runner.Log(50)
+			commitsCh <- commitsResult{c, err}
+		}()
+
+		brRes := <-branchCh
+		tblRes := <-tablesCh
+		brchRes := <-branchesCh
+		cmtRes := <-commitsCh
+
+		// Derive dirty from tables — any table with a non-nil Status
+		// has uncommitted changes, avoiding a redundant Status() call.
+		dirty := false
+		for _, t := range tblRes.tables {
+			if t.Status != nil {
+				dirty = true
+				break
+			}
+		}
 
 		return DataLoadedMsg{
-			Branch:   branch,
+			Branch:   brRes.branch,
 			Dirty:    dirty,
-			Tables:   tables,
-			Branches: branches,
-			Commits:  commits,
+			Tables:   tblRes.tables,
+			Branches: brchRes.branches,
+			Commits:  cmtRes.commits,
 		}
 	}
 }
