@@ -92,9 +92,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		mainW, mainH := a.mainPanelSize()
-		a.diffView.SetSize(mainW, mainH)
-		a.schemaView.SetSize(mainW, mainH)
+		// Viewport sizes will be recalculated in View()
 		return a, nil
 
 	case tea.KeyMsg:
@@ -235,38 +233,66 @@ func (a App) View() string {
 	}
 
 	leftW := a.leftColumnWidth()
-	_, mainH := a.mainPanelSize()
+
+	// Height budget: terminal height minus 1 row for the key hints bar.
+	// Each bordered panel adds 2 rows (top + bottom border) beyond its
+	// inner content height.  The left column has 4 panels (status + 3 lists).
+	//
+	// Layout:  statusBox(inner=statusH, outer=statusH+2)
+	//        + 3 * listBox(inner=panelH, outer=panelH+2)
+	//        + hintsBar(1 row)
+	//        = a.height
+	//
+	// So: (statusH+2) + 3*(panelH+2) + 1 = a.height
+	//     statusH + 3*panelH + 9 = a.height
+	const statusInnerH = 3 // "Status" title + branch line + dirty marker
+	const borderH = 2      // top + bottom border per panel
+	const hintsH = 1       // key hints bar
+
+	availForPanels := a.height - hintsH - (statusInnerH + borderH) - 3*borderH
+	panelH := max(2, availForPanels/3)
+
+	// Total outer height of the left column
+	leftOuterH := (statusInnerH + borderH) + 3*(panelH+borderH)
+
+	// Main panel inner height = left column outer height minus its own border
+	mainInnerH := leftOuterH - borderH
+	mainInnerW := a.width - leftW - 4
+
+	// Update viewport sizes
+	a.diffView.SetSize(mainInnerW, mainInnerH-1) // -1 for title line
+	a.schemaView.SetSize(mainInnerW, mainInnerH-1)
 
 	// Status bar
 	a.statusBar.Width = leftW - 4 // account for border
 	statusContent := titleStyle.Render("Status") + "\n" + a.statusBar.View()
-	statusBox := a.panelBox(-1, leftW, 4, statusContent) // -1 = never focused
-
-	// Panel heights for the 3 list panels
-	panelH := max(3, (mainH-4)/3)
+	statusBox := a.panelBox(-1, leftW, statusInnerH, statusContent) // -1 = never focused
 
 	// Tables panel
 	a.tables.Focused = a.focused == components.PanelTables
+	a.tables.Height = panelH
 	tablesTitle := fmt.Sprintf("Tables (%d)", len(a.tables.Tables))
 	tablesBox := a.panelBox(components.PanelTables, leftW, panelH, titleStyle.Render(tablesTitle)+"\n"+a.tables.View())
 
 	// Branches panel
 	a.branches.Focused = a.focused == components.PanelBranches
+	a.branches.Height = panelH
 	branchesTitle := fmt.Sprintf("Branches (%d)", len(a.branches.Branches))
 	branchesBox := a.panelBox(components.PanelBranches, leftW, panelH, titleStyle.Render(branchesTitle)+"\n"+a.branches.View())
 
 	// Commits panel
 	a.commits.Focused = a.focused == components.PanelCommits
+	a.commits.Height = panelH
 	commitsTitle := fmt.Sprintf("Commits (%d)", len(a.commits.Commits))
 	commitsBox := a.panelBox(components.PanelCommits, leftW, panelH, titleStyle.Render(commitsTitle)+"\n"+a.commits.View())
 
 	// Left column
 	left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
 
-	// Main panel
+	// Main panel — same outer height as left column
 	mainTitle := a.mainPanelTitle()
 	mainContent := a.mainPanelContent()
-	mainBox := blurredBorder.Width(a.width - leftW - 4).Height(mainH).Render(
+	mainBox := blurredBorder.Width(mainInnerW).Height(mainInnerH).Render(
 		titleStyle.Render(mainTitle) + "\n" + mainContent,
 	)
 
@@ -302,11 +328,6 @@ func (a App) leftColumnWidth() int {
 		w = 40
 	}
 	return w
-}
-
-func (a App) mainPanelSize() (int, int) {
-	leftW := a.leftColumnWidth()
-	return a.width - leftW - 4, a.height - 2 // -2 for hints + border
 }
 
 func (a App) panelBox(panel components.Panel, width, height int, content string) string {
