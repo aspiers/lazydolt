@@ -28,9 +28,7 @@ var (
 	inactiveTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim
 	tabSepStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim separator
 
-	// Main (right) panel has no left border — the left column's right
-	// border serves as the shared divider, eliminating the double ││.
-	mainBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true, true, true, false)
+	mainBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 )
 
 // MainView tracks which content is shown in the right panel.
@@ -446,9 +444,8 @@ func (a App) View() string {
 			body = left
 		} else {
 			// Normal: side-by-side columns.
-			// The main panel has no left border (shared with left column's
-			// right border), so only the right border adds 1 char.
-			mainInnerW := a.width - leftW - 1
+			// Both borders (left + right) add 2 chars.
+			mainInnerW := a.width - leftW - 2
 			a.diffView.SetSize(mainInnerW, mainInnerH-1)
 			a.schemaView.SetSize(mainInnerW, mainInnerH-1)
 			a.browserView.SetSize(mainInnerW, mainInnerH-1)
@@ -456,10 +453,10 @@ func (a App) View() string {
 			mainTitle := a.mainPanelTitle()
 			mainContent := a.mainPanelContent()
 			mainRendered := mainBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
-			// Embed title in the top border (no left corner)
+			// Embed title in the top border
 			mainLines := strings.Split(mainRendered, "\n")
 			if len(mainLines) > 0 {
-				mainLines[0] = buildMainTitleBorder(mainTitle, mainInnerW+1)
+				mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
 			}
 			mainBox := strings.Join(mainLines, "\n")
 			body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
@@ -638,25 +635,6 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 	}
 
 	return borderStyle.Render("╭─") +
-		titleRendered +
-		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
-}
-
-// buildMainTitleBorder creates a top border for the main (right) panel
-// which has no left border. Format: ─Title───────────╮
-func buildMainTitleBorder(title string, totalWidth int) string {
-	borderStyle := lipgloss.NewStyle()
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	titleRendered := titleStyle.Render(title)
-
-	// Fixed parts: "─" (1 char) + title + fill + "╮" (1 char)
-	titleVisualW := lipgloss.Width(titleRendered)
-	fillCount := totalWidth - 1 - titleVisualW - 1
-	if fillCount < 1 {
-		fillCount = 1
-	}
-
-	return borderStyle.Render("─") +
 		titleRendered +
 		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
 }
