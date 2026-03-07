@@ -47,9 +47,10 @@ type App struct {
 	commits   components.CommitsModel
 
 	// Main content
-	mainView   MainView
-	diffView   components.DiffView
-	schemaView components.SchemaView
+	mainView    MainView
+	diffView    components.DiffView
+	schemaView  components.SchemaView
+	browserView components.BrowserView
 
 	// Commit dialog
 	commitInput textinput.Model
@@ -75,6 +76,7 @@ func NewApp(runner *dolt.Runner) App {
 		focused:     components.PanelTables,
 		diffView:    components.NewDiffView(80, 20),
 		schemaView:  components.NewSchemaView(80, 20),
+		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
 	}
 	app.syncFocus()
@@ -205,7 +207,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewCommitMsg:
 		cmds = append(cmds, a.loadCommitDiff(msg.Hash))
 	case BrowserDataMsg:
-		// TODO: implement browser view
+		a.mainView = MainViewBrowser
+		a.browserView.SetData(msg.Table, msg.Columns, msg.Rows, msg.Total, msg.Offset)
+	case browserPageMsg:
+		cmds = append(cmds, a.loadTableDataPage(msg.Table, msg.Offset))
 	}
 
 	// Update main panel viewport
@@ -217,6 +222,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MainViewSchema:
 		var cmd tea.Cmd
 		a.schemaView, cmd = a.schemaView.Update(msg)
+		cmds = append(cmds, cmd)
+	case MainViewBrowser:
+		var cmd tea.Cmd
+		a.browserView, cmd = a.browserView.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -264,6 +273,7 @@ func (a App) View() string {
 	// Update viewport sizes
 	a.diffView.SetSize(mainInnerW, mainInnerH-1) // -1 for title line
 	a.schemaView.SetSize(mainInnerW, mainInnerH-1)
+	a.browserView.SetSize(mainInnerW, mainInnerH-1)
 
 	// Status bar
 	a.statusBar.Width = leftW - 4 // account for border
@@ -350,6 +360,9 @@ func (a App) mainPanelTitle() string {
 		}
 		return "Schema"
 	case MainViewBrowser:
+		if a.browserView.Table != "" {
+			return "Browse: " + a.browserView.Table
+		}
 		return "Table Browser"
 	}
 	return ""
@@ -361,6 +374,8 @@ func (a App) mainPanelContent() string {
 		return a.diffView.View()
 	case MainViewSchema:
 		return a.schemaView.View()
+	case MainViewBrowser:
+		return a.browserView.View()
 	}
 	return ""
 }
@@ -446,9 +461,13 @@ func (a *App) loadSchema(table string) tea.Cmd {
 }
 
 func (a *App) loadTableData(table string) tea.Cmd {
+	return a.loadTableDataPage(table, 0)
+}
+
+func (a *App) loadTableDataPage(table string, offset int) tea.Cmd {
 	runner := a.runner
 	return func() tea.Msg {
-		result, err := runner.QueryPage(table, 100, 0)
+		result, err := runner.QueryPage(table, 100, offset)
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}
@@ -457,7 +476,7 @@ func (a *App) loadTableData(table string) tea.Cmd {
 			Columns: result.Columns,
 			Rows:    result.Rows,
 			Total:   result.Total,
-			Offset:  0,
+			Offset:  offset,
 		}
 	}
 }
@@ -660,3 +679,4 @@ type viewTableDataMsg = components.ViewTableDataMsg
 type viewCommitMsg = components.ViewCommitMsg
 type checkoutBranchMsg = components.CheckoutBranchMsg
 type deleteBranchMsg = components.DeleteBranchMsg
+type browserPageMsg = components.BrowserPageMsg
