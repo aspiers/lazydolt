@@ -73,23 +73,22 @@ Use a **dedicated tmux session called `lazydolt-test`** for interactive testing.
 
 ### Setting up the test repo
 
-A test dolt repo lives at `tmp/test-dolt/`. To recreate it:
+A test dolt repo lives at `tmp/test-dolt/`. Use the setup script to create it:
 
 ```bash
-rm -rf tmp/test-dolt
-mkdir -p tmp/test-dolt
-cd tmp/test-dolt
-dolt init
-dolt sql -q "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100), email VARCHAR(200))"
-dolt sql -q "INSERT INTO users VALUES (1, 'Alice', 'alice@example.com'), (2, 'Bob', 'bob@example.com')"
-dolt add .
-dolt commit -m "Initial commit: users table"
-dolt sql -q "INSERT INTO users VALUES (3, 'Charlie', 'charlie@example.com')"
-dolt add .
-dolt commit -m "Add Charlie to users"
-dolt sql -q "CREATE TABLE orders (id INT PRIMARY KEY, user_id INT, amount DECIMAL(10,2))"
-dolt checkout -b feature-branch
+# Default: 10 commits in tmp/test-dolt
+scripts/setup-test-db.sh
+
+# Custom location and commit count
+scripts/setup-test-db.sh tmp/test-dolt 20
 ```
+
+The script creates a database with:
+- 3 tables (users, orders, products) with realistic data
+- The specified number of commits (default 10, minimum 4)
+- A `feature-branch` diverging partway through history
+- Staged changes (users table modified and staged)
+- Unstaged changes (orders and products modified but not staged)
 
 ### Running lazydolt in tmux
 
