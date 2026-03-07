@@ -170,7 +170,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		// Route to focused panel
+		// Route to focused panel, tracking cursor changes for auto-preview.
+		prevCursor := a.focusedCursor()
 		switch a.focused {
 		case components.PanelTables:
 			var cmd tea.Cmd
@@ -184,6 +185,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
+		}
+		if a.focusedCursor() != prevCursor {
+			cmds = append(cmds, a.autoPreview())
 		}
 
 	case DataLoadedMsg:
@@ -663,6 +667,48 @@ func (a *App) autoViewDiff() tea.Cmd {
 		return nil
 	}
 	return a.loadDiff(table)
+}
+
+// focusedCursor returns the cursor position of the currently focused panel.
+func (a App) focusedCursor() int {
+	switch a.focused {
+	case components.PanelTables:
+		return a.tables.Cursor
+	case components.PanelBranches:
+		return a.branches.Cursor
+	case components.PanelCommits:
+		return a.commits.Cursor
+	default:
+		return -1
+	}
+}
+
+// autoPreview loads the appropriate content for the currently selected item
+// in the focused panel, updating the right panel automatically.
+func (a *App) autoPreview() tea.Cmd {
+	switch a.focused {
+	case components.PanelTables:
+		table := a.tables.SelectedTable()
+		if table == "" {
+			return nil
+		}
+		switch a.mainView {
+		case MainViewSchema:
+			return a.loadSchema(table)
+		case MainViewBrowser:
+			return a.loadTableData(table)
+		default:
+			return a.loadDiff(table)
+		}
+	case components.PanelCommits:
+		hash := a.commits.SelectedHash()
+		if hash == "" {
+			return nil
+		}
+		return a.loadCommitDiff(hash)
+	default:
+		return nil
+	}
 }
 
 func (a *App) loadDiff(table string) tea.Cmd {

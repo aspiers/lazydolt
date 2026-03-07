@@ -53,7 +53,7 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 		case "L":
 			m.HScroll += HScrollStep
 		case "enter":
-			if h := m.selectedHash(); h != "" {
+			if h := m.SelectedHash(); h != "" {
 				return m, func() tea.Msg { return ViewCommitMsg{Hash: h} }
 			}
 		}
@@ -97,7 +97,8 @@ func (m CommitsModel) View() string {
 	return HScrollContent(s, m.HScroll)
 }
 
-func (m CommitsModel) selectedHash() string {
+// SelectedHash returns the hash of the currently selected commit, or empty string.
+func (m CommitsModel) SelectedHash() string {
 	if m.Cursor >= 0 && m.Cursor < len(m.Commits) {
 		return m.Commits[m.Cursor].Hash
 	}
