@@ -1090,8 +1090,8 @@ func (a App) renderHelp() string {
     Tab           Next panel
     1-3           Jump to panel
     c             Commit
-    < / >         Resize columns
-    =             Reset column sizes
+    + / _         Zoom panel
+    Esc           Back / reset zoom
     ?             Toggle help
 
   Tables Panel
