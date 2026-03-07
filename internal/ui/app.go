@@ -213,20 +213,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadTableDataPage(msg.Table, msg.Offset))
 	}
 
-	// Update main panel viewport
-	switch a.mainView {
-	case MainViewDiff:
-		var cmd tea.Cmd
-		a.diffView, cmd = a.diffView.Update(msg)
-		cmds = append(cmds, cmd)
-	case MainViewSchema:
-		var cmd tea.Cmd
-		a.schemaView, cmd = a.schemaView.Update(msg)
-		cmds = append(cmds, cmd)
-	case MainViewBrowser:
-		var cmd tea.Cmd
-		a.browserView, cmd = a.browserView.Update(msg)
-		cmds = append(cmds, cmd)
+	// Update main panel viewport, but don't forward key events that
+	// were already handled by a focused left panel — otherwise j/k
+	// scrolls both the panel list and the viewport simultaneously.
+	if _, isKey := msg.(tea.KeyMsg); !isKey {
+		switch a.mainView {
+		case MainViewDiff:
+			var cmd tea.Cmd
+			a.diffView, cmd = a.diffView.Update(msg)
+			cmds = append(cmds, cmd)
+		case MainViewSchema:
+			var cmd tea.Cmd
+			a.schemaView, cmd = a.schemaView.Update(msg)
+			cmds = append(cmds, cmd)
+		case MainViewBrowser:
+			var cmd tea.Cmd
+			a.browserView, cmd = a.browserView.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return a, tea.Batch(cmds...)
