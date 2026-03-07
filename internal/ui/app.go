@@ -62,6 +62,9 @@ type App struct {
 
 	// Help
 	showHelp bool
+
+	// Layout: left column width as percentage (10-70)
+	leftColPct int
 }
 
 // NewApp creates a new App with the given dolt runner.
@@ -78,6 +81,7 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
+		leftColPct:  30,
 	}
 	app.syncFocus()
 	return app
@@ -129,6 +133,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "c":
 			return a, a.startCommit()
+		case "<":
+			if a.leftColPct > 15 {
+				a.leftColPct -= 5
+			}
+			return a, nil
+		case ">":
+			if a.leftColPct < 60 {
+				a.leftColPct += 5
+			}
+			return a, nil
+		case "=":
+			a.leftColPct = 30
+			return a, nil
 		case "?":
 			a.showHelp = true
 			return a, nil
@@ -333,12 +350,14 @@ func (a App) View() string {
 // --- Layout helpers ---
 
 func (a App) leftColumnWidth() int {
-	w := a.width * 30 / 100
+	w := a.width * a.leftColPct / 100
 	if w < 24 {
 		w = 24
 	}
-	if w > 40 {
-		w = 40
+	// Don't let either column get too narrow
+	maxW := a.width - 30
+	if w > maxW {
+		w = maxW
 	}
 	return w
 }
@@ -679,6 +698,8 @@ func (a App) renderHelp() string {
     Tab           Next panel
     1-3           Jump to panel
     c             Commit
+    < / >         Resize columns
+    =             Reset column sizes
     ?             Toggle help
 
   Tables Panel
