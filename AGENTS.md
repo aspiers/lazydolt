@@ -104,8 +104,10 @@ tmux has-session -t lazydolt-test 2>/dev/null
 tmux send-keys -t lazydolt-test 'q'
 sleep 0.5
 
-# If no session exists, create one:
-tmux new-session -d -s lazydolt-test -x 120 -y 40 ~/bin/lazydolt tmp/test-dolt
+# If no session exists, create one (start a shell, NOT lazydolt directly,
+# so quitting lazydolt doesn't kill the session):
+tmux new-session -d -s lazydolt-test -x 120 -y 40
+tmux send-keys -t lazydolt-test '~/bin/lazydolt tmp/test-dolt' Enter
 
 # If session exists but lazydolt has exited, start a new instance:
 tmux send-keys -t lazydolt-test '~/bin/lazydolt tmp/test-dolt' Enter
