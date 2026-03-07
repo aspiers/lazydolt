@@ -1,0 +1,8 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_server_port": 3306,
+  "dolt_database": "lazydolt",
+  "project_id": "72cbddb7-2464-4fe2-aba6-23ad1c4b7488"
+}
