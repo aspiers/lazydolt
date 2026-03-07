@@ -241,9 +241,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.commits.Commits = msg.Commits
 		a.errMsg = ""
 		// Clamp cursors
-		if a.tables.Cursor >= len(a.tables.Tables) {
-			a.tables.Cursor = max(0, len(a.tables.Tables)-1)
-		}
+		a.tables.ClampCursor()
 		if a.branches.Cursor >= len(a.branches.Branches) {
 			a.branches.Cursor = max(0, len(a.branches.Branches)-1)
 		}
