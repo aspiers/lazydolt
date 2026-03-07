@@ -30,10 +30,14 @@ var (
 type MainView int
 
 const (
-	MainViewDiff MainView = iota
-	MainViewSchema
-	MainViewBrowser
+	MainViewDiff    MainView = iota // "Status" tab — shows diff
+	MainViewBrowser                 // "Browse" tab — shows table data
+	MainViewSchema                  // "Schema" tab — shows DDL
+	mainViewCount                   // sentinel for wrapping
 )
+
+// mainViewTabNames returns the display names for the right panel tabs.
+var mainViewTabNames = [mainViewCount]string{"Status", "Browse", "Schema"}
 
 // ScreenMode controls the column split ratio (like lazygit's +/_ cycling).
 type ScreenMode int
@@ -147,16 +151,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "tab":
 			a.cycleFocus()
-			return a, a.autoViewDiff()
+			if a.focused != components.PanelTables {
+				a.mainView = MainViewDiff
+			}
+			return a, a.autoPreview()
 		case "1":
+			if a.focused == components.PanelTables {
+				// Already on Tables — cycle to next tab
+				a.mainView = (a.mainView + 1) % mainViewCount
+				return a, a.autoPreview()
+			}
 			a.setFocus(components.PanelTables)
-			return a, a.autoViewDiff()
+			return a, a.autoPreview()
 		case "2":
 			a.setFocus(components.PanelBranches)
-			return a, nil
+			a.mainView = MainViewDiff
+			return a, a.autoPreview()
 		case "3":
 			a.setFocus(components.PanelCommits)
-			return a, nil
+			a.mainView = MainViewDiff
+			return a, a.autoPreview()
+		case "]":
+			if a.focused == components.PanelTables {
+				a.mainView = (a.mainView + 1) % mainViewCount
+				return a, a.autoPreview()
+			}
+		case "[":
+			if a.focused == components.PanelTables {
+				a.mainView = (a.mainView + mainViewCount - 1) % mainViewCount
+				return a, a.autoPreview()
+			}
 		case "c":
 			return a, a.startCommit()
 		case "+":
@@ -205,15 +229,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.branches.Cursor >= len(a.branches.Branches) {
 			a.branches.Cursor = max(0, len(a.branches.Branches)-1)
 		}
-		// Auto-load diff for selected table
-		cmds = append(cmds, a.autoViewDiff())
+		// Auto-load content for the active tab
+		cmds = append(cmds, a.autoPreview())
 
 	case DiffContentMsg:
-		a.mainView = MainViewDiff
 		a.diffView.SetContent(msg.Table, msg.Content)
 
 	case SchemaContentMsg:
-		a.mainView = MainViewSchema
 		a.schemaView.SetContent(msg.Table, msg.Schema)
 
 	case RefreshMsg:
@@ -247,7 +269,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewCommitMsg:
 		cmds = append(cmds, a.loadCommitDiff(msg.Hash))
 	case BrowserDataMsg:
-		a.mainView = MainViewBrowser
 		a.browserView.SetData(msg.Table, msg.Columns, msg.Rows, msg.Total, msg.Offset)
 	case browserPageMsg:
 		cmds = append(cmds, a.loadTableDataPage(msg.Table, msg.Offset))
@@ -365,9 +386,9 @@ func (a App) View() string {
 		a.statusBar.Width = leftW - 2 // account for border
 		statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
 
-		// Tables panel
+		// Tables panel — title includes sub-tab indicators
 		a.tables.Height = tablesH
-		tablesTitle := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
+		tablesTitle := fmt.Sprintf("[1]─%s", a.tabBar())
 		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, a.tables.View())
 
 		// Branches panel
@@ -453,7 +474,7 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 	switch a.focused {
 	case components.PanelTables:
 		a.tables.Height = innerH
-		title := fmt.Sprintf("[1]─Tables (%d)", len(a.tables.Tables))
+		title := fmt.Sprintf("[1]─%s", a.tabBar())
 		return a.panelBox(components.PanelTables, width, innerH, title, a.tables.View())
 	case components.PanelBranches:
 		a.branches.Height = innerH
@@ -468,6 +489,20 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 		a.statusBar.Width = width - 2
 		return a.panelBox(-1, width, innerH, "Status", a.statusBar.View())
 	}
+}
+
+// tabBar renders the sub-tab indicator for the Tables panel title.
+// Active tab is highlighted, e.g. "[Status] Browse Schema".
+func (a App) tabBar() string {
+	var parts []string
+	for i, name := range mainViewTabNames {
+		if MainView(i) == a.mainView {
+			parts = append(parts, "["+name+"]")
+		} else {
+			parts = append(parts, name)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // --- Layout helpers ---
@@ -531,6 +566,16 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 		borderStyle = lipgloss.NewStyle()
 		titleStyle = lipgloss.NewStyle().Bold(true)
 	}
+
+	// Max visual width for the title: totalWidth - "╭─" (2) - "─╮" (2)
+	maxTitleW := totalWidth - 4
+	if maxTitleW < 3 {
+		maxTitleW = 3
+	}
+	if len(title) > maxTitleW {
+		title = title[:maxTitleW-1] + "…"
+	}
+
 	titleRendered := titleStyle.Render(title)
 
 	// Fixed parts: "╭─" (2 chars) + title + fill + "╮" (1 char)

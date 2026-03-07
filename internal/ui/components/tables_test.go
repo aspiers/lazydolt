@@ -118,45 +118,6 @@ func TestTablesModel_StageAll(t *testing.T) {
 	}
 }
 
-func TestTablesModel_ViewDiff(t *testing.T) {
-	m := newTablesModel(sampleTables(), 0, true)
-	_, cmd := m.Update(keyMsg("d"))
-	msg := execCmd(t, cmd)
-	diffMsg, ok := msg.(ViewDiffMsg)
-	if !ok {
-		t.Fatalf("expected ViewDiffMsg, got %T", msg)
-	}
-	if diffMsg.Table != "users" {
-		t.Errorf("table = %q, want %q", diffMsg.Table, "users")
-	}
-}
-
-func TestTablesModel_ViewSchema(t *testing.T) {
-	m := newTablesModel(sampleTables(), 0, true)
-	_, cmd := m.Update(keyMsg("s"))
-	msg := execCmd(t, cmd)
-	schemaMsg, ok := msg.(ViewSchemaMsg)
-	if !ok {
-		t.Fatalf("expected ViewSchemaMsg, got %T", msg)
-	}
-	if schemaMsg.Table != "users" {
-		t.Errorf("table = %q, want %q", schemaMsg.Table, "users")
-	}
-}
-
-func TestTablesModel_ViewData(t *testing.T) {
-	m := newTablesModel(sampleTables(), 0, true)
-	_, cmd := m.Update(specialKeyMsg(tea.KeyEnter))
-	msg := execCmd(t, cmd)
-	dataMsg, ok := msg.(ViewTableDataMsg)
-	if !ok {
-		t.Fatalf("expected ViewTableDataMsg, got %T", msg)
-	}
-	if dataMsg.Table != "users" {
-		t.Errorf("table = %q, want %q", dataMsg.Table, "users")
-	}
-}
-
 func TestTablesModel_SelectedTable(t *testing.T) {
 	m := newTablesModel(sampleTables(), 1, true)
 	if got := m.SelectedTable(); got != "orders" {

@@ -57,12 +57,6 @@ func (m TablesModel) Update(msg tea.Msg) (TablesModel, tea.Cmd) {
 			return m, m.toggleStage()
 		case "a":
 			return m, func() tea.Msg { return StageAllMsg{} }
-		case "d":
-			return m, m.viewDiff()
-		case "s":
-			return m, m.viewSchema()
-		case "enter":
-			return m, m.viewData()
 		}
 	}
 	return m, nil
