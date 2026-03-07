@@ -60,14 +60,18 @@ func (m TablesModel) Update(msg tea.Msg) (TablesModel, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the table list.
+// View renders the table list, clipped to the visible height.
 func (m TablesModel) View() string {
 	if len(m.Tables) == 0 {
 		return "No tables"
 	}
 
+	// Height - 1 accounts for the title line rendered by the parent.
+	start, end := visibleRange(m.Cursor, len(m.Tables), m.Height-1)
+
 	var s string
-	for i, t := range m.Tables {
+	for i := start; i < end; i++ {
+		t := m.Tables[i]
 		marker := "  "
 		markerFn := normalStyle.Render
 

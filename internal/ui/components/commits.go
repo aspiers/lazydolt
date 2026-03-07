@@ -53,14 +53,18 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the commits list.
+// View renders the commits list, clipped to the visible height.
 func (m CommitsModel) View() string {
 	if len(m.Commits) == 0 {
 		return "No commits"
 	}
 
+	// Height - 1 accounts for the title line rendered by the parent.
+	start, end := visibleRange(m.Cursor, len(m.Commits), m.Height-1)
+
 	var s string
-	for i, c := range m.Commits {
+	for i := start; i < end; i++ {
+		c := m.Commits[i]
 		hash := c.Hash
 		if len(hash) > 7 {
 			hash = hash[:7]

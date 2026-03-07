@@ -348,7 +348,44 @@ func (a App) panelBox(panel components.Panel, width, height int, content string)
 	if panel == a.focused {
 		style = focusedBorder
 	}
-	return style.Width(width - 4).Height(height).Render(content)
+	innerW := width - 4 // account for border+padding
+	// Lipgloss Height() sets minimum height but doesn't clip overflow.
+	// Truncate content to the panel height accounting for line wrapping.
+	content = truncateToVisualHeight(content, height, innerW)
+	return style.Width(innerW).Height(height).Render(content)
+}
+
+// truncateToVisualHeight clips content to at most maxLines visual lines,
+// accounting for text wrapping within the given width.
+func truncateToVisualHeight(content string, maxLines, width int) string {
+	if maxLines <= 0 {
+		return ""
+	}
+	if width <= 0 {
+		width = 1
+	}
+
+	lines := strings.Split(content, "\n")
+	visualCount := 0
+	var kept []string
+
+	for _, line := range lines {
+		lineW := lipgloss.Width(line)
+		// How many visual lines does this logical line occupy?
+		wrapped := 1
+		if lineW > width {
+			wrapped = (lineW + width - 1) / width
+		}
+
+		if visualCount+wrapped > maxLines {
+			// This line would push us over; stop here.
+			break
+		}
+		kept = append(kept, line)
+		visualCount += wrapped
+	}
+
+	return strings.Join(kept, "\n")
 }
 
 func (a App) mainPanelTitle() string {

@@ -57,14 +57,18 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the branches list.
+// View renders the branches list, clipped to the visible height.
 func (m BranchesModel) View() string {
 	if len(m.Branches) == 0 {
 		return "No branches"
 	}
 
+	// Height - 1 accounts for the title line rendered by the parent.
+	start, end := visibleRange(m.Cursor, len(m.Branches), m.Height-1)
+
 	var s string
-	for i, b := range m.Branches {
+	for i := start; i < end; i++ {
+		b := m.Branches[i]
 		prefix := "  "
 		nameStyle := normalStyle
 		if b.IsCurrent {
