@@ -103,6 +103,11 @@ type App struct {
 	showDeleteBranchConfirm bool
 	deleteBranchName        string
 
+	// Rename branch dialog
+	showRenameBranch bool
+	renameBranchOld  string
+	renameBranchErr  string
+
 	// Discard confirmation
 	showDiscardConfirm bool
 	discardTable       string
@@ -242,6 +247,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// New branch dialog intercepts all keys when active
 		if a.showBranch {
 			return a.updateNewBranchDialog(msg)
+		}
+		// Rename branch dialog intercepts all keys when active
+		if a.showRenameBranch {
+			return a.updateRenameBranchDialog(msg)
 		}
 		// Panel filter intercepts all keys when active
 		if a.filterActive {
@@ -432,6 +441,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tables, cmd = a.tables.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelBranches:
+			if msg.String() == "r" {
+				if b := a.branches.SelectedBranch(); b != "" {
+					return a, a.startRenameBranch(b)
+				}
+			}
 			if msg.String() == "m" {
 				if b := a.branches.SelectedBranch(); b != "" {
 					a.showMergeMenu = true
@@ -569,6 +583,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NewBranchSuccessMsg:
 		a.showBranch = false
 		a.branchErr = ""
+		cmds = append(cmds, a.loadData())
+
+	case RenameBranchSuccessMsg:
+		a.showRenameBranch = false
+		a.renameBranchErr = ""
 		cmds = append(cmds, a.loadData())
 
 	// Component messages that bubble up
@@ -850,6 +869,9 @@ func (a App) View() string {
 	}
 	if a.showBranch {
 		result = a.overlayNewBranchDialog(result)
+	}
+	if a.showRenameBranch {
+		result = a.overlayRenameBranchDialog(result)
 	}
 
 	return result
@@ -1805,6 +1827,70 @@ func (a App) overlayNewBranchDialog(base string) string {
 	)
 }
 
+// --- Rename branch dialog ---
+
+func (a *App) startRenameBranch(name string) tea.Cmd {
+	a.showRenameBranch = true
+	a.renameBranchOld = name
+	a.renameBranchErr = ""
+	a.branchInput.SetValue(name)
+	a.branchInput.Focus()
+	a.branchInput.CursorEnd()
+	return textinput.Blink
+}
+
+func (a App) updateRenameBranchDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showRenameBranch = false
+		return a, nil
+	case "enter":
+		newName := strings.TrimSpace(a.branchInput.Value())
+		if newName == "" {
+			a.renameBranchErr = "Branch name cannot be empty"
+			return a, nil
+		}
+		if newName == a.renameBranchOld {
+			a.showRenameBranch = false
+			return a, nil
+		}
+		a.showRenameBranch = false
+		oldName := a.renameBranchOld
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.RenameBranch(oldName, newName); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return RenameBranchSuccessMsg{OldName: oldName, NewName: newName}
+		}
+	}
+
+	var cmd tea.Cmd
+	a.branchInput, cmd = a.branchInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlayRenameBranchDialog(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
+	}
+
+	content := titleStyle.Render("Rename Branch") + "\n\n"
+	content += a.branchInput.View() + "\n\n"
+	if a.renameBranchErr != "" {
+		content += errorStyle.Render(a.renameBranchErr) + "\n"
+	}
+	content += lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] rename  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Delete branch confirmation ---
 
 func (a App) updateDeleteBranchConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2167,6 +2253,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "Enter", "Checkout branch"},
 	{"Branches Panel", "m", "Merge into current"},
 	{"Branches Panel", "n", "New branch"},
+	{"Branches Panel", "r", "Rename branch"},
 	{"Branches Panel", "D", "Delete branch"},
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},

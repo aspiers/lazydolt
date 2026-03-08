@@ -32,6 +32,9 @@ type RemoteOpSuccessMsg struct{ Op string }
 // NewBranchSuccessMsg is sent when a new branch is created.
 type NewBranchSuccessMsg struct{ Name string }
 
+// RenameBranchSuccessMsg is sent when a branch is renamed.
+type RenameBranchSuccessMsg struct{ OldName, NewName string }
+
 // MergeSuccessMsg is sent when a merge completes.
 type MergeSuccessMsg struct{ Branch string }
 

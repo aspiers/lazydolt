@@ -120,6 +120,12 @@ func (r *Runner) NewBranch(name string) error {
 	return err
 }
 
+// RenameBranch renames a branch.
+func (r *Runner) RenameBranch(oldName, newName string) error {
+	_, err := r.Exec("branch", "-m", oldName, newName)
+	return err
+}
+
 // DeleteBranch deletes a branch.
 func (r *Runner) DeleteBranch(name string) error {
 	_, err := r.Exec("branch", "-d", name)
