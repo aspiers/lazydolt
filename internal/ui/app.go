@@ -83,8 +83,9 @@ type App struct {
 	amendMode   bool
 
 	// Reset menu
-	showResetMenu   bool
-	resetCommitHash string
+	showResetMenu        bool
+	resetCommitHash      string
+	showHardResetConfirm bool
 
 	// New branch dialog
 	branchInput textinput.Model
@@ -94,6 +95,10 @@ type App struct {
 	// Merge menu
 	showMergeMenu bool
 	mergeBranch   string
+
+	// Delete branch confirmation
+	showDeleteBranchConfirm bool
+	deleteBranchName        string
 
 	// Discard confirmation
 	showDiscardConfirm bool
@@ -169,9 +174,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		// Delete branch confirmation intercepts all keys when active
+		if a.showDeleteBranchConfirm {
+			return a.updateDeleteBranchConfirm(msg)
+		}
 		// Discard confirmation intercepts all keys when active
 		if a.showDiscardConfirm {
 			return a.updateDiscardConfirm(msg)
+		}
+		// Hard reset confirmation intercepts all keys when active
+		if a.showHardResetConfirm {
+			return a.updateHardResetConfirm(msg)
 		}
 		// Reset menu intercepts all keys when active
 		if a.showResetMenu {
@@ -423,7 +436,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case checkoutBranchMsg:
 		cmds = append(cmds, a.checkoutCmd(msg.Branch))
 	case deleteBranchMsg:
-		cmds = append(cmds, a.deleteBranchCmd(msg.Branch))
+		a.showDeleteBranchConfirm = true
+		a.deleteBranchName = msg.Branch
 	case newBranchPromptMsg:
 		return a, a.startNewBranch()
 	case viewCommitMsg:
@@ -631,8 +645,14 @@ func (a App) View() string {
 	result := body + "\n" + hints
 
 	// Overlays
+	if a.showDeleteBranchConfirm {
+		result = a.overlayDeleteBranchConfirm(result)
+	}
 	if a.showDiscardConfirm {
 		result = a.overlayDiscardConfirm(result)
+	}
+	if a.showHardResetConfirm {
+		result = a.overlayHardResetConfirm(result)
 	}
 	if a.showResetMenu {
 		result = a.overlayResetMenu(result)
@@ -1412,6 +1432,51 @@ func (a App) overlayNewBranchDialog(base string) string {
 	)
 }
 
+// --- Delete branch confirmation ---
+
+func (a App) updateDeleteBranchConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	branch := a.deleteBranchName
+	runner := a.runner
+	switch msg.String() {
+	case "esc", "n":
+		a.showDeleteBranchConfirm = false
+		a.deleteBranchName = ""
+		return a, nil
+	case "y", "enter":
+		a.showDeleteBranchConfirm = false
+		a.deleteBranchName = ""
+		return a, func() tea.Msg {
+			if err := runner.DeleteBranch(branch); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return RefreshMsg{}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayDeleteBranchConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+
+	content := titleStyle.Render("Delete Branch") + "\n\n"
+	content += warnStyle.Render("Delete branch "+a.deleteBranchName+"?") + "\n"
+	content += dimStyle.Render("This cannot be undone.") + "\n\n"
+	content += "  [y/Enter] delete  " + dimStyle.Render("[n/Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Discard confirmation ---
 
 func (a App) updateDiscardConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1477,14 +1542,10 @@ func (a App) updateResetMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ResetSuccessMsg{Mode: "soft"}
 		}
 	case "h":
+		// Show confirmation before hard reset
 		a.showResetMenu = false
-		a.resetCommitHash = ""
-		return a, func() tea.Msg {
-			if err := runner.ResetHard(hash); err != nil {
-				return ErrorMsg{Err: err}
-			}
-			return ResetSuccessMsg{Mode: "hard"}
-		}
+		a.showHardResetConfirm = true
+		return a, nil
 	}
 	return a, nil
 }
@@ -1506,6 +1567,56 @@ func (a App) overlayResetMenu(base string) string {
 	content += "  [s] soft reset  " + dimStyle.Render("— keep working changes") + "\n"
 	content += "  [h] hard reset  " + dimStyle.Render("— discard all changes") + "\n\n"
 	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// --- Hard reset confirmation ---
+
+func (a App) updateHardResetConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	hash := a.resetCommitHash
+	runner := a.runner
+	switch msg.String() {
+	case "esc", "n":
+		a.showHardResetConfirm = false
+		a.resetCommitHash = ""
+		return a, nil
+	case "y", "enter":
+		a.showHardResetConfirm = false
+		a.resetCommitHash = ""
+		return a, func() tea.Msg {
+			if err := runner.ResetHard(hash); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return ResetSuccessMsg{Mode: "hard"}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayHardResetConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	shortHash := a.resetCommitHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+
+	content := titleStyle.Render("Hard Reset") + "\n\n"
+	content += warnStyle.Render("Reset to "+shortHash+" and discard ALL changes?") + "\n"
+	content += dimStyle.Render("This cannot be undone.") + "\n\n"
+	content += "  [y/Enter] reset  " + dimStyle.Render("[n/Esc] cancel")
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
