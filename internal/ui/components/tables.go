@@ -87,6 +87,8 @@ func (m TablesModel) Update(msg tea.Msg) (TablesModel, tea.Cmd) {
 			}
 		case "a":
 			return m, func() tea.Msg { return StageAllMsg{} }
+		case "A":
+			return m, func() tea.Msg { return UnstageAllMsg{} }
 		}
 	}
 	return m, nil
@@ -330,6 +332,7 @@ func (m TablesModel) DisplayLen() int {
 type StageTableMsg struct{ Table string }
 type UnstageTableMsg struct{ Table string }
 type StageAllMsg struct{}
+type UnstageAllMsg struct{}
 type ViewDiffMsg struct{ Table string }
 type ViewSchemaMsg struct{ Table string }
 type ViewTableDataMsg struct{ Table string }

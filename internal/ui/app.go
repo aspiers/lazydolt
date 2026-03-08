@@ -372,6 +372,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.unstageCmd(msg.Table))
 	case stageAllMsg:
 		cmds = append(cmds, a.stageAllCmd())
+	case unstageAllMsg:
+		cmds = append(cmds, a.unstageAllCmd())
 	case viewDiffMsg:
 		cmds = append(cmds, a.loadDiff(msg.Table, a.tables.SelectedIsStaged()))
 	case viewSchemaMsg:
@@ -1132,6 +1134,16 @@ func (a *App) stageAllCmd() tea.Cmd {
 	}
 }
 
+func (a *App) unstageAllCmd() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if err := runner.ResetAll(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return RefreshMsg{}
+	}
+}
+
 func (a *App) checkoutCmd(branch string) tea.Cmd {
 	runner := a.runner
 	return func() tea.Msg {
@@ -1387,6 +1399,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},
 	{"Tables Panel", "a", "Stage all"},
+	{"Tables Panel", "A", "Unstage all"},
 	{"Tables Panel", "d", "Discard changes"},
 	{"Tables Panel", "s", "View schema"},
 	{"Tables Panel", "Enter", "Browse table data"},
@@ -1459,6 +1472,7 @@ func (a App) renderHelp() string {
 type stageTableMsg = components.StageTableMsg
 type unstageTableMsg = components.UnstageTableMsg
 type stageAllMsg = components.StageAllMsg
+type unstageAllMsg = components.UnstageAllMsg
 type viewDiffMsg = components.ViewDiffMsg
 type viewSchemaMsg = components.ViewSchemaMsg
 type viewTableDataMsg = components.ViewTableDataMsg
