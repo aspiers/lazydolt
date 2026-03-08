@@ -14,6 +14,7 @@ var (
 	stagedNewStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
 	modifiedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
 	deletedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+	conflictStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // magenta
 	selectedStyle  = lipgloss.NewStyle().Reverse(true)
 	normalStyle    = lipgloss.NewStyle()
 	headerStyle    = lipgloss.NewStyle().Bold(true)
@@ -23,7 +24,8 @@ var (
 type section int
 
 const (
-	sectionUnstaged section = iota
+	sectionConflicts section = iota
+	sectionUnstaged
 	sectionStaged
 	sectionClean
 )
@@ -137,11 +139,14 @@ func (m TablesModel) View() string {
 
 // renderHeader renders a section header line like "▼ Unstaged (2)".
 func (m TablesModel) renderHeader(s section, selected bool) string {
-	unstaged, staged, clean := m.groupTables()
+	conflicts, unstaged, staged, clean := m.groupTables()
 
 	var name string
 	var count int
 	switch s {
+	case sectionConflicts:
+		name = "Conflicts"
+		count = len(conflicts)
 	case sectionUnstaged:
 		name = "Unstaged changes"
 		count = len(unstaged)
@@ -184,6 +189,9 @@ func (m TablesModel) renderTable(t *domain.Table, selected bool) string {
 		case "deleted":
 			marker = "D"
 			markerStyle = deletedStyle
+		case "conflict":
+			marker = "C"
+			markerStyle = conflictStyle
 		}
 	}
 
@@ -193,11 +201,13 @@ func (m TablesModel) renderTable(t *domain.Table, selected bool) string {
 	return fmt.Sprintf("  %s %s", markerStyle.Render(marker), t.Name)
 }
 
-// groupTables splits the Tables slice into unstaged, staged, and clean groups.
-func (m TablesModel) groupTables() (unstaged, staged, clean []domain.Table) {
+// groupTables splits the Tables slice into conflicts, unstaged, staged, and clean groups.
+func (m TablesModel) groupTables() (conflicts, unstaged, staged, clean []domain.Table) {
 	for _, t := range m.Tables {
 		if t.Status == nil {
 			clean = append(clean, t)
+		} else if t.Status.Status == "conflict" {
+			conflicts = append(conflicts, t)
 		} else if t.Status.Staged {
 			staged = append(staged, t)
 		} else {
@@ -211,7 +221,7 @@ func (m TablesModel) groupTables() (unstaged, staged, clean []domain.Table) {
 // respecting collapsed sections and the active filter. Only sections with
 // items are shown.
 func (m TablesModel) displayItems() []displayItem {
-	unstaged, staged, clean := m.groupTables()
+	conflicts, unstaged, staged, clean := m.groupTables()
 
 	var items []displayItem
 	filter := strings.ToLower(m.Filter)
@@ -241,6 +251,7 @@ func (m TablesModel) displayItems() []displayItem {
 		}
 	}
 
+	addSection(sectionConflicts, conflicts)
 	addSection(sectionUnstaged, unstaged)
 	addSection(sectionStaged, staged)
 	addSection(sectionClean, clean)
@@ -298,6 +309,22 @@ func (m TablesModel) IsOnHeader() bool {
 func (m TablesModel) IsOnCleanHeader() bool {
 	sec, ok := m.SelectedSection()
 	return ok && sec == sectionClean
+}
+
+// SelectedIsConflict returns true if the selected table has merge conflicts.
+func (m TablesModel) SelectedIsConflict() bool {
+	e := m.selectedEntry()
+	return e != nil && e.Status == "conflict"
+}
+
+// HasConflicts returns true if any table has merge conflicts.
+func (m TablesModel) HasConflicts() bool {
+	for _, t := range m.Tables {
+		if t.Status != nil && t.Status.Status == "conflict" {
+			return true
+		}
+	}
+	return false
 }
 
 // selectedEntry returns the StatusEntry for the table under the cursor,

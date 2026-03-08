@@ -9,7 +9,7 @@ import "time"
 type StatusEntry struct {
 	TableName string `json:"table_name"`
 	Staged    bool   `json:"staged"`
-	Status    string `json:"status"` // "new table", "modified", "deleted", "renamed"
+	Status    string `json:"status"` // "new table", "modified", "deleted", "renamed", "conflict"
 }
 
 // Table represents a table in the working set with optional change status.
@@ -66,6 +66,13 @@ type DiffSummary struct {
 type Schema struct {
 	TableName       string
 	CreateStatement string // raw CREATE TABLE from 'dolt schema show'
+}
+
+// ConflictSummary holds conflict data for a table after a merge.
+type ConflictSummary struct {
+	TableName    string
+	NumConflicts int
+	RawOutput    string // raw text from 'dolt conflicts cat <table>'
 }
 
 // QueryResult holds the result of an arbitrary SQL query.

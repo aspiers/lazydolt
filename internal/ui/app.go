@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -365,7 +366,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevCursor := a.focusedCursor()
 		switch a.focused {
 		case components.PanelTables:
-			if msg.String() == "d" {
+			switch msg.String() {
+			case "O":
+				if a.tables.SelectedIsConflict() {
+					table := a.tables.SelectedTable()
+					return a, a.resolveConflicts(table, true)
+				}
+			case "T":
+				if a.tables.SelectedIsConflict() {
+					table := a.tables.SelectedTable()
+					return a, a.resolveConflicts(table, false)
+				}
+			case "X":
+				if a.tables.HasConflicts() {
+					return a, a.abortMerge()
+				}
+			case "d":
 				table := a.tables.SelectedTable()
 				if table != "" {
 					a.showDiscardConfirm = true
@@ -470,6 +486,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case MergeSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case MergeConflictMsg:
+		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.loadData())
+
+	case ConflictResolveMsg:
+		cmds = append(cmds, a.loadData())
+
+	case MergeAbortMsg:
 		cmds = append(cmds, a.loadData())
 
 	case NewBranchSuccessMsg:
@@ -699,7 +725,7 @@ func (a App) View() string {
 		hints = a.filterInput.View() + "  " +
 			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] confirm  [Esc] clear")
 	} else {
-		hints = components.RenderKeyHints(a.focused, a.width)
+		hints = components.RenderKeyHints(a.focused, a.width, a.tables.HasConflicts())
 		// Show active filter indicator
 		activeFilter := ""
 		switch a.focused {
@@ -1170,6 +1196,10 @@ func (a *App) autoPreview() tea.Cmd {
 		if table == "" {
 			return nil
 		}
+		// Show conflict details for conflicted tables
+		if a.tables.SelectedIsConflict() {
+			return a.loadConflicts(table)
+		}
 		switch a.mainView {
 		case MainViewSchema:
 			return a.loadSchema(table)
@@ -1205,6 +1235,43 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 			return ErrorMsg{Err: err}
 		}
 		return DiffContentMsg{Table: label, Content: content}
+	}
+}
+
+func (a App) resolveConflicts(table string, ours bool) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		var err error
+		if ours {
+			err = runner.ConflictsResolveOurs(table)
+		} else {
+			err = runner.ConflictsResolveTheirs(table)
+		}
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return ConflictResolveMsg{Table: table, Ours: ours}
+	}
+}
+
+func (a App) abortMerge() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if err := runner.MergeAbort(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return MergeAbortMsg{}
+	}
+}
+
+func (a *App) loadConflicts(table string) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		content, err := runner.ConflictsCat(table)
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return DiffContentMsg{Table: table + " (conflicts)", Content: content}
 	}
 }
 
@@ -1726,7 +1793,9 @@ func (a App) updateMergeMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.showMergeMenu = false
 		a.mergeBranch = ""
 		return a, func() tea.Msg {
-			if _, err := runner.Merge(branch); err != nil {
+			if _, err := runner.Merge(branch); errors.Is(err, dolt.ErrMergeConflict) {
+				return MergeConflictMsg{Branch: branch}
+			} else if err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return MergeSuccessMsg{Branch: branch}
@@ -1789,6 +1858,9 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "a", "Stage all"},
 	{"Tables Panel", "A", "Unstage all"},
 	{"Tables Panel", "d", "Discard changes"},
+	{"Tables Panel", "O", "Resolve conflicts (ours)"},
+	{"Tables Panel", "T", "Resolve conflicts (theirs)"},
+	{"Tables Panel", "X", "Abort merge"},
 	{"Tables Panel", "s", "View schema"},
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},

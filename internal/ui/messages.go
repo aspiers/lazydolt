@@ -35,6 +35,18 @@ type NewBranchSuccessMsg struct{ Name string }
 // MergeSuccessMsg is sent when a merge completes.
 type MergeSuccessMsg struct{ Branch string }
 
+// MergeConflictMsg is sent when a merge results in conflicts.
+type MergeConflictMsg struct{ Branch string }
+
+// ConflictResolveMsg is sent when conflicts are resolved for a table.
+type ConflictResolveMsg struct {
+	Table string
+	Ours  bool // true if resolved with --ours, false for --theirs
+}
+
+// MergeAbortMsg is sent when a merge is aborted.
+type MergeAbortMsg struct{}
+
 // DiffContentMsg carries diff text to the main panel.
 type DiffContentMsg struct {
 	Table   string

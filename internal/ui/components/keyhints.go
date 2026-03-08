@@ -28,12 +28,14 @@ const (
 )
 
 // RenderKeyHints renders the hint bar for the given panel and width.
-func RenderKeyHints(panel Panel, width int) string {
-	hints := hintsForPanel(panel)
+// If hasConflicts is true, conflict-specific hints are shown for the Tables panel.
+func RenderKeyHints(panel Panel, width int, hasConflicts ...bool) string {
+	conflicts := len(hasConflicts) > 0 && hasConflicts[0]
+	hints := hintsForPanel(panel, conflicts)
 	return renderHints(hints, width)
 }
 
-func hintsForPanel(panel Panel) []KeyHint {
+func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 	global := []KeyHint{
 		{Key: "+/_", Desc: "zoom"},
 		{Key: "</>/=", Desc: "width"},
@@ -48,12 +50,20 @@ func hintsForPanel(panel Panel) []KeyHint {
 
 	switch panel {
 	case PanelTables:
-		return append([]KeyHint{
+		tableHints := []KeyHint{
 			{Key: "Space", Desc: "stage"},
 			{Key: "[/]", Desc: "tab"},
 			{Key: "a/A", Desc: "stage/unstage all"},
 			{Key: "d", Desc: "discard"},
-		}, global...)
+		}
+		if hasConflicts {
+			tableHints = append(tableHints,
+				KeyHint{Key: "O", Desc: "resolve ours"},
+				KeyHint{Key: "T", Desc: "resolve theirs"},
+				KeyHint{Key: "X", Desc: "abort merge"},
+			)
+		}
+		return append(tableHints, global...)
 	case PanelBranches:
 		return append([]KeyHint{
 			{Key: "Enter", Desc: "checkout"},

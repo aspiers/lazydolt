@@ -3,12 +3,16 @@ package dolt
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 )
 
 // ErrNothingToCommit is returned when there are no staged changes to commit.
 var ErrNothingToCommit = errors.New("nothing to commit")
+
+// ErrMergeConflict is returned when a merge results in conflicts.
+var ErrMergeConflict = errors.New("merge conflict")
 
 // commitHashRegex extracts the commit hash from dolt commit output.
 var commitHashRegex = regexp.MustCompile(`commit\s+([a-z0-9]+)`)
@@ -123,11 +127,28 @@ func (r *Runner) DeleteBranch(name string) error {
 }
 
 // Merge merges the given branch into the current branch.
+// Returns ErrMergeConflict if the merge results in conflicts.
 func (r *Runner) Merge(branch string) (string, error) {
-	return r.Exec("merge", branch)
+	return r.mergeWithConflictDetection("merge", branch)
 }
 
 // MergeSquash merges the given branch into the current branch as a squash.
 func (r *Runner) MergeSquash(branch string) (string, error) {
 	return r.Exec("merge", "--squash", branch)
+}
+
+// mergeWithConflictDetection runs a merge and detects conflicts
+// by checking for "CONFLICT" in the stdout output.
+func (r *Runner) mergeWithConflictDetection(args ...string) (string, error) {
+	cmd := exec.Command(r.DoltPath, args...)
+	cmd.Dir = r.RepoDir
+	out, err := cmd.CombinedOutput()
+	text := stripANSI(string(out))
+	if err != nil && strings.Contains(text, "CONFLICT") {
+		return text, ErrMergeConflict
+	}
+	if err != nil {
+		return "", fmt.Errorf("dolt %s: %s", strings.Join(args, " "), strings.TrimSpace(text))
+	}
+	return text, nil
 }

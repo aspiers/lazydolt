@@ -280,8 +280,11 @@ func TestTablesModel_ClampCursor(t *testing.T) {
 
 func TestTablesModel_GroupTables(t *testing.T) {
 	m := newTablesModel(sampleTables(), 0, true)
-	unstaged, staged, clean := m.groupTables()
+	conflicts, unstaged, staged, clean := m.groupTables()
 
+	if len(conflicts) != 0 {
+		t.Errorf("conflicts = %v, want []", conflicts)
+	}
 	if len(unstaged) != 1 || unstaged[0].Name != "users" {
 		t.Errorf("unstaged = %v, want [users]", unstaged)
 	}
