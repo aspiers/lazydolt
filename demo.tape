@@ -126,9 +126,19 @@ Sleep 1.5s
 Escape
 Sleep 1s
 
-# --- Open help overlay ---
+# --- Open help overlay (multi-column layout) ---
 Type "?"
-Sleep 3s
+Sleep 2.5s
+
+# Scroll down to show scrolling works
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 1.5s
 
 # Close help
 Escape
