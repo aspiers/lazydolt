@@ -915,8 +915,18 @@ func (a *App) autoPreview() tea.Cmd {
 	case components.PanelTables:
 		// On a section header, show all diffs for that section
 		if a.tables.IsOnHeader() {
-			if a.mainView == MainViewDiff && !a.tables.IsOnCleanHeader() {
+			if a.tables.IsOnCleanHeader() {
+				return nil
+			}
+			switch a.mainView {
+			case MainViewDiff:
 				return a.loadDiff("", a.tables.SelectedIsStaged())
+			case MainViewBrowser:
+				a.browserView.Clear("Select a table to browse its data")
+				return nil
+			case MainViewSchema:
+				a.schemaView.Clear("Select a table to view its schema")
+				return nil
 			}
 			return nil
 		}

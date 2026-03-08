@@ -29,7 +29,7 @@ type SchemaView struct {
 // NewSchemaView creates a new schema viewer with the given dimensions.
 func NewSchemaView(width, height int) SchemaView {
 	vp := viewport.New(width, height)
-	vp.SetContent("Select a table and press 's' to view schema")
+	vp.SetContent("Select a table to view its schema")
 	vp.SetHorizontalStep(4)
 	return SchemaView{
 		Viewport: vp,
@@ -49,6 +49,13 @@ func (sv *SchemaView) SetContent(table, schema string) {
 
 	sv.Viewport.SetContent(highlightSQL(schema))
 	sv.Viewport.GotoTop()
+}
+
+// Clear resets the schema view with a placeholder message.
+func (sv *SchemaView) Clear(message string) {
+	sv.Table = ""
+	sv.Schema = ""
+	sv.Viewport.SetContent(message)
 }
 
 // SetSize updates the viewport dimensions.

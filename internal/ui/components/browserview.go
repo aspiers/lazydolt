@@ -37,7 +37,7 @@ type BrowserView struct {
 // NewBrowserView creates a new browser view with the given dimensions.
 func NewBrowserView(width, height int) BrowserView {
 	vp := viewport.New(width, height)
-	vp.SetContent("Select a table and press Enter to browse data")
+	vp.SetContent("Select a table to browse its data")
 	vp.SetHorizontalStep(4)
 	return BrowserView{
 		Viewport: vp,
@@ -61,6 +61,16 @@ func (bv *BrowserView) SetData(table string, columns []string, rows []map[string
 
 	bv.Viewport.SetContent(bv.renderTable())
 	bv.Viewport.GotoTop()
+}
+
+// Clear resets the browser view with a placeholder message.
+func (bv *BrowserView) Clear(message string) {
+	bv.Table = ""
+	bv.Columns = nil
+	bv.Rows = nil
+	bv.Total = 0
+	bv.Offset = 0
+	bv.Viewport.SetContent(message)
 }
 
 // SetSize updates the viewport dimensions.
