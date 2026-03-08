@@ -85,6 +85,12 @@ func (r *Runner) Fetch() (string, error) {
 	return r.Exec("fetch")
 }
 
+// CheckoutTable restores a table to its HEAD state, discarding changes.
+func (r *Runner) CheckoutTable(table string) error {
+	_, err := r.Exec("checkout", table)
+	return err
+}
+
 // Checkout switches to the given branch.
 func (r *Runner) Checkout(branch string) error {
 	_, err := r.Exec("checkout", branch)

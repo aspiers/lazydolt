@@ -85,6 +85,10 @@ type App struct {
 	showResetMenu   bool
 	resetCommitHash string
 
+	// Discard confirmation
+	showDiscardConfirm bool
+	discardTable       string
+
 	// Error flash
 	errMsg string
 
@@ -150,6 +154,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		// Discard confirmation intercepts all keys when active
+		if a.showDiscardConfirm {
+			return a.updateDiscardConfirm(msg)
+		}
 		// Reset menu intercepts all keys when active
 		if a.showResetMenu {
 			return a.updateResetMenu(msg)
@@ -262,6 +270,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevCursor := a.focusedCursor()
 		switch a.focused {
 		case components.PanelTables:
+			if msg.String() == "d" {
+				table := a.tables.SelectedTable()
+				if table != "" {
+					a.showDiscardConfirm = true
+					a.discardTable = table
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.tables, cmd = a.tables.Update(msg)
 			cmds = append(cmds, cmd)
@@ -571,6 +587,9 @@ func (a App) View() string {
 	result := body + "\n" + hints
 
 	// Overlays
+	if a.showDiscardConfirm {
+		result = a.overlayDiscardConfirm(result)
+	}
 	if a.showResetMenu {
 		result = a.overlayResetMenu(result)
 	}
@@ -1244,6 +1263,51 @@ func (a App) overlayCommitDialog(base string) string {
 	)
 }
 
+// --- Discard confirmation ---
+
+func (a App) updateDiscardConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	table := a.discardTable
+	runner := a.runner
+	switch msg.String() {
+	case "esc", "n":
+		a.showDiscardConfirm = false
+		a.discardTable = ""
+		return a, nil
+	case "y", "enter":
+		a.showDiscardConfirm = false
+		a.discardTable = ""
+		return a, func() tea.Msg {
+			if err := runner.CheckoutTable(table); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return RefreshMsg{}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayDiscardConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+
+	content := titleStyle.Render("Discard Changes") + "\n\n"
+	content += warnStyle.Render("Discard all changes to "+a.discardTable+"?") + "\n"
+	content += dimStyle.Render("This cannot be undone.") + "\n\n"
+	content += dimStyle.Render("[y/Enter] discard  [n/Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Reset menu ---
 
 func (a App) updateResetMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1323,7 +1387,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},
 	{"Tables Panel", "a", "Stage all"},
-	{"Tables Panel", "d", "View diff"},
+	{"Tables Panel", "d", "Discard changes"},
 	{"Tables Panel", "s", "View schema"},
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},
