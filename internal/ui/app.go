@@ -372,7 +372,7 @@ func (a App) View() string {
 	if a.screenMode == ScreenHalf {
 		// Half mode: vertical split — focused left panel on top,
 		// main panel on bottom, both full terminal width.
-		topH := (a.height - hintsH) / 2 // roughly half the screen
+		topH := (a.height - hintsH) / 3 // roughly one-third of the screen
 		topInnerH := topH - borderH
 		if topInnerH < 2 {
 			topInnerH = 2
