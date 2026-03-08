@@ -29,6 +29,9 @@ type ResetSuccessMsg struct{ Mode string }
 // RemoteOpSuccessMsg is sent when a push/pull/fetch succeeds.
 type RemoteOpSuccessMsg struct{ Op string }
 
+// NewBranchSuccessMsg is sent when a new branch is created.
+type NewBranchSuccessMsg struct{ Name string }
+
 // DiffContentMsg carries diff text to the main panel.
 type DiffContentMsg struct {
 	Table   string

@@ -86,6 +86,11 @@ type App struct {
 	showResetMenu   bool
 	resetCommitHash string
 
+	// New branch dialog
+	branchInput textinput.Model
+	showBranch  bool
+	branchErr   string
+
 	// Discard confirmation
 	showDiscardConfirm bool
 	discardTable       string
@@ -116,6 +121,10 @@ func NewApp(runner *dolt.Runner) App {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 
+	bi := textinput.New()
+	bi.Placeholder = "Enter branch name..."
+	bi.CharLimit = 200
+
 	hf := textinput.New()
 	hf.Placeholder = "Type to filter..."
 	hf.CharLimit = 50
@@ -130,6 +139,7 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
+		branchInput: bi,
 		helpFilter:  hf,
 		spinner:     s,
 		leftRatio:   30,
@@ -166,6 +176,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Commit dialog intercepts all keys when active
 		if a.showCommit {
 			return a.updateCommitDialog(msg)
+		}
+		// New branch dialog intercepts all keys when active
+		if a.showBranch {
+			return a.updateNewBranchDialog(msg)
 		}
 		if a.showHelp {
 			if msg.String() == "?" || msg.String() == "esc" {
@@ -369,6 +383,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RemoteOpSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
+	case NewBranchSuccessMsg:
+		a.showBranch = false
+		a.branchErr = ""
+		cmds = append(cmds, a.loadData())
+
 	// Component messages that bubble up
 	case stageTableMsg:
 		cmds = append(cmds, a.stageCmd(msg.Table))
@@ -388,6 +407,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.checkoutCmd(msg.Branch))
 	case deleteBranchMsg:
 		cmds = append(cmds, a.deleteBranchCmd(msg.Branch))
+	case newBranchPromptMsg:
+		return a, a.startNewBranch()
 	case viewCommitMsg:
 		cmds = append(cmds, a.loadCommitDiff(msg.Hash))
 	case BrowserDataMsg:
@@ -601,6 +622,9 @@ func (a App) View() string {
 	}
 	if a.showCommit {
 		result = a.overlayCommitDialog(result)
+	}
+	if a.showBranch {
+		result = a.overlayNewBranchDialog(result)
 	}
 
 	return result
@@ -1311,6 +1335,63 @@ func (a App) overlayCommitDialog(base string) string {
 	)
 }
 
+// --- New branch dialog ---
+
+func (a *App) startNewBranch() tea.Cmd {
+	a.showBranch = true
+	a.branchInput.Reset()
+	a.branchInput.Focus()
+	a.branchErr = ""
+	return textinput.Blink
+}
+
+func (a App) updateNewBranchDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showBranch = false
+		return a, nil
+	case "enter":
+		name := strings.TrimSpace(a.branchInput.Value())
+		if name == "" {
+			a.branchErr = "Branch name cannot be empty"
+			return a, nil
+		}
+		a.showBranch = false
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.NewBranch(name); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return NewBranchSuccessMsg{Name: name}
+		}
+	}
+
+	var cmd tea.Cmd
+	a.branchInput, cmd = a.branchInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlayNewBranchDialog(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
+	}
+
+	content := titleStyle.Render("New Branch") + "\n\n"
+	content += a.branchInput.View() + "\n\n"
+	if a.branchErr != "" {
+		content += errorStyle.Render(a.branchErr) + "\n"
+	}
+	content += lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] create  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Discard confirmation ---
 
 func (a App) updateDiscardConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1516,4 +1597,5 @@ type viewTableDataMsg = components.ViewTableDataMsg
 type viewCommitMsg = components.ViewCommitMsg
 type checkoutBranchMsg = components.CheckoutBranchMsg
 type deleteBranchMsg = components.DeleteBranchMsg
+type newBranchPromptMsg = components.NewBranchPromptMsg
 type browserPageMsg = components.BrowserPageMsg
