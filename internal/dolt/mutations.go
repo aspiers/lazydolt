@@ -91,6 +91,19 @@ func (r *Runner) CheckoutTable(table string) error {
 	return err
 }
 
+// CommitAmend amends the last commit with staged changes and a new message.
+func (r *Runner) CommitAmend(message string) (string, error) {
+	out, err := r.Exec("commit", "--amend", "-m", message)
+	if err != nil {
+		return "", err
+	}
+	matches := commitHashRegex.FindStringSubmatch(out)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("could not parse commit hash from: %s", out)
+	}
+	return matches[1], nil
+}
+
 // Checkout switches to the given branch.
 func (r *Runner) Checkout(branch string) error {
 	_, err := r.Exec("checkout", branch)

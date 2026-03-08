@@ -80,6 +80,7 @@ type App struct {
 	commitInput textinput.Model
 	showCommit  bool
 	commitErr   string
+	amendMode   bool
 
 	// Reset menu
 	showResetMenu   bool
@@ -286,6 +287,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelCommits:
+			if msg.String() == "A" {
+				return a, a.startAmend()
+			}
 			if msg.String() == "g" {
 				if h := a.commits.SelectedHash(); h != "" {
 					a.showResetMenu = true
@@ -1226,10 +1230,25 @@ func (a *App) startCommit() tea.Cmd {
 	return textinput.Blink
 }
 
+func (a *App) startAmend() tea.Cmd {
+	if len(a.commits.Commits) == 0 {
+		a.errMsg = "No commits to amend"
+		return nil
+	}
+	a.showCommit = true
+	a.amendMode = true
+	a.commitInput.Reset()
+	a.commitInput.SetValue(a.commits.Commits[0].Message)
+	a.commitInput.Focus()
+	a.commitErr = ""
+	return textinput.Blink
+}
+
 func (a App) updateCommitDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		a.showCommit = false
+		a.amendMode = false
 		return a, nil
 	case "enter":
 		message := strings.TrimSpace(a.commitInput.Value())
@@ -1238,7 +1257,18 @@ func (a App) updateCommitDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.showCommit = false
+		amend := a.amendMode
+		a.amendMode = false
 		runner := a.runner
+		if amend {
+			return a, func() tea.Msg {
+				hash, err := runner.CommitAmend(message)
+				if err != nil {
+					return ErrorMsg{Err: err}
+				}
+				return CommitSuccessMsg{Hash: hash}
+			}
+		}
 		return a, func() tea.Msg {
 			hash, err := runner.Commit(message)
 			if err != nil {
@@ -1259,12 +1289,18 @@ func (a App) overlayCommitDialog(base string) string {
 		dialogW = a.width - 10
 	}
 
-	content := titleStyle.Render("Commit Message") + "\n\n"
+	title := "Commit Message"
+	action := "commit"
+	if a.amendMode {
+		title = "Amend Commit"
+		action = "amend"
+	}
+	content := titleStyle.Render(title) + "\n\n"
 	content += a.commitInput.View() + "\n\n"
 	if a.commitErr != "" {
 		content += errorStyle.Render(a.commitErr) + "\n"
 	}
-	content += lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] commit  [Esc] cancel")
+	content += lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] " + action + "  [Esc] cancel")
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
@@ -1409,6 +1445,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "D", "Delete branch"},
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},
+	{"Commits Panel", "A", "Amend last commit"},
 	{"Commits Panel", "g", "Reset to commit"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
