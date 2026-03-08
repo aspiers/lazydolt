@@ -47,6 +47,18 @@ type ConflictResolveMsg struct {
 // MergeAbortMsg is sent when a merge is aborted.
 type MergeAbortMsg struct{}
 
+// StashSuccessMsg is sent when changes are stashed.
+type StashSuccessMsg struct{}
+
+// StashPopMsg is sent when a stash entry is popped/applied.
+type StashPopMsg struct{ Index int }
+
+// StashDropMsg is sent when a stash entry is dropped.
+type StashDropMsg struct{ Index int }
+
+// StashListMsg carries the list of stash entries.
+type StashListMsg struct{ Entries []domain.StashEntry }
+
 // DiffContentMsg carries diff text to the main panel.
 type DiffContentMsg struct {
 	Table   string

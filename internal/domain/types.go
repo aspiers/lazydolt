@@ -75,6 +75,14 @@ type ConflictSummary struct {
 	RawOutput    string // raw text from 'dolt conflicts cat <table>'
 }
 
+// StashEntry represents a single stash entry.
+type StashEntry struct {
+	Index   int    // 0-based index (stash@{N})
+	Branch  string // branch name when stashed
+	Hash    string // commit hash
+	Message string // commit message at stash time
+}
+
 // QueryResult holds the result of an arbitrary SQL query.
 type QueryResult struct {
 	Columns []string                 // column names in display order

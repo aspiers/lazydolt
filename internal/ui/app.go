@@ -105,6 +105,11 @@ type App struct {
 	showDiscardConfirm bool
 	discardTable       string
 
+	// Stash list
+	showStashList bool
+	stashEntries  []domain.StashEntry
+	stashCursor   int
+
 	// Panel filter
 	filterInput  textinput.Model
 	filterActive bool // text input is focused
@@ -204,6 +209,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Merge menu intercepts all keys when active
 		if a.showMergeMenu {
 			return a.updateMergeMenu(msg)
+		}
+		// Stash list intercepts all keys when active
+		if a.showStashList {
+			return a.updateStashList(msg)
 		}
 		// Commit dialog intercepts all keys when active
 		if a.showCommit {
@@ -355,6 +364,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.filterInput.Focus()
 				return a, textinput.Blink
 			}
+		case "S":
+			if a.statusBar.Dirty {
+				return a, a.stashCmd()
+			}
+			return a, a.loadStashList()
 		case "?":
 			a.showHelp = true
 			a.helpFilter.Reset()
@@ -496,6 +510,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case MergeAbortMsg:
+		cmds = append(cmds, a.loadData())
+
+	case StashSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case StashListMsg:
+		a.stashEntries = msg.Entries
+		a.stashCursor = 0
+		if len(msg.Entries) > 0 {
+			a.showStashList = true
+		}
+
+	case StashPopMsg:
+		a.showStashList = false
+		cmds = append(cmds, a.loadData())
+
+	case StashDropMsg:
+		// Refresh the stash list after drop
+		a.showStashList = false
 		cmds = append(cmds, a.loadData())
 
 	case NewBranchSuccessMsg:
@@ -764,6 +797,9 @@ func (a App) View() string {
 	}
 	if a.showMergeMenu {
 		result = a.overlayMergeMenu(result)
+	}
+	if a.showStashList {
+		result = a.overlayStashList(result)
 	}
 	if a.showCommit {
 		result = a.overlayCommitDialog(result)
@@ -1261,6 +1297,47 @@ func (a App) abortMerge() tea.Cmd {
 			return ErrorMsg{Err: err}
 		}
 		return MergeAbortMsg{}
+	}
+}
+
+func (a App) stashCmd() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if err := runner.Stash(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return StashSuccessMsg{}
+	}
+}
+
+func (a App) loadStashList() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		entries, err := runner.StashList()
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return StashListMsg{Entries: entries}
+	}
+}
+
+func (a App) stashPopCmd(index int) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if err := runner.StashPop(index); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return StashPopMsg{Index: index}
+	}
+}
+
+func (a App) stashDropCmd(index int) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if err := runner.StashDrop(index); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return StashDropMsg{Index: index}
 	}
 }
 
@@ -1834,6 +1911,83 @@ func (a App) overlayMergeMenu(base string) string {
 	)
 }
 
+// --- Stash List ---
+
+func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		a.showStashList = false
+		return a, nil
+	case "j", "down":
+		if a.stashCursor < len(a.stashEntries)-1 {
+			a.stashCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.stashCursor > 0 {
+			a.stashCursor--
+		}
+		return a, nil
+	case " ", "enter":
+		// Pop the selected stash
+		if a.stashCursor < len(a.stashEntries) {
+			idx := a.stashEntries[a.stashCursor].Index
+			a.showStashList = false
+			return a, a.stashPopCmd(idx)
+		}
+	case "d":
+		// Drop the selected stash
+		if a.stashCursor < len(a.stashEntries) {
+			idx := a.stashEntries[a.stashCursor].Index
+			a.showStashList = false
+			return a, a.stashDropCmd(idx)
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayStashList(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	selectedLine := lipgloss.NewStyle().Reverse(true)
+
+	content := titleStyle.Render("Stash List") + "\n\n"
+
+	if len(a.stashEntries) == 0 {
+		content += dimStyle.Render("  No stash entries") + "\n"
+	} else {
+		for i, entry := range a.stashEntries {
+			// Truncate hash to 7 chars
+			hash := entry.Hash
+			if len(hash) > 7 {
+				hash = hash[:7]
+			}
+			line := fmt.Sprintf("  stash@{%d}: %s %s", entry.Index, hash, entry.Message)
+			if len(line) > dialogW-4 {
+				line = line[:dialogW-7] + "..."
+			}
+			if i == a.stashCursor {
+				content += selectedLine.Render(line) + "\n"
+			} else {
+				content += line + "\n"
+			}
+		}
+	}
+
+	content += "\n" + dimStyle.Render("[Space/Enter] pop  [d] drop  [Esc] close")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Help ---
 
 // helpBindings is the structured list of keybindings for the help overlay.
@@ -1850,6 +2004,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "P", "Push to remote"},
 	{"Global", "p", "Pull from remote"},
 	{"Global", "f", "Fetch from remote"},
+	{"Global", "S", "Stash changes / show stash list"},
 	{"Global", "/", "Filter panel items"},
 	{"Global", "Esc", "Back / reset zoom / clear filter"},
 	{"Global", "?", "Toggle help"},

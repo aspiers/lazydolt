@@ -43,6 +43,7 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 		{Key: "/", Desc: "filter"},
 		{Key: "Esc", Desc: "back"},
 		{Key: "c", Desc: "commit"},
+		{Key: "S", Desc: "stash"},
 		{Key: "P/p/f", Desc: "push/pull/fetch"},
 		{Key: "?", Desc: "help"},
 		{Key: "q", Desc: "quit"},
