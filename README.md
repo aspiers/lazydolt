@@ -104,4 +104,4 @@ go build -o ~/bin/lazydolt ./cmd/lazydolt
 
 ## License
 
-MIT
+[GPL-3.0](LICENSE)
