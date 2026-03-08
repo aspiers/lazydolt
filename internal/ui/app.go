@@ -359,7 +359,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DataLoadedMsg:
 		a.dataLoaded = true
-		a.statusBar.Branch = msg.Branch
 		a.statusBar.Dirty = msg.Dirty
 		a.statusBar.RepoDir = a.repoName
 		a.statusBar.ParentDir = a.repoParent
