@@ -438,18 +438,26 @@ func (a App) View() string {
 
 		// The focused panel gets more height; the other two share
 		// the remainder equally (like lazygit's auto-grow behavior).
-		focusedH, unfocusedH := a.panelHeights(availForPanels)
-
-		heightFor := func(panel components.Panel) int {
-			if panel == a.focused {
-				return focusedH
+		// When PanelMain is focused, all three left panels split evenly.
+		var tablesH, branchesH, commitsH int
+		if a.focused == components.PanelMain {
+			each := availForPanels / 3
+			remainder := availForPanels - 3*each
+			tablesH = each + remainder // give remainder to first panel
+			branchesH = each
+			commitsH = each
+		} else {
+			focusedH, unfocusedH := a.panelHeights(availForPanels)
+			heightFor := func(panel components.Panel) int {
+				if panel == a.focused {
+					return focusedH
+				}
+				return unfocusedH
 			}
-			return unfocusedH
+			tablesH = heightFor(components.PanelTables)
+			branchesH = heightFor(components.PanelBranches)
+			commitsH = heightFor(components.PanelCommits)
 		}
-
-		tablesH := heightFor(components.PanelTables)
-		branchesH := heightFor(components.PanelBranches)
-		commitsH := heightFor(components.PanelCommits)
 
 		// Total outer height of the left column
 		leftOuterH := (statusInnerH + borderH) + (tablesH + borderH) + (branchesH + borderH) + (commitsH + borderH)
