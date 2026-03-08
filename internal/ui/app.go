@@ -635,7 +635,7 @@ func (a App) View() string {
 
 		// Status bar
 		a.statusBar.Width = leftW - 2 // account for border
-		statusBox := a.panelBox(-1, leftW, statusInnerH, "Status", a.statusBar.View())
+		statusBox := a.panelBox(-1, leftW, statusInnerH, "Database", a.statusBar.View())
 
 		// Loading spinner or real content for each panel
 		loading := a.loadingText()
@@ -801,7 +801,7 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 	default:
 		// Status panel or unknown — show status
 		a.statusBar.Width = width - 2
-		return a.panelBox(-1, width, innerH, "Status", a.statusBar.View())
+		return a.panelBox(-1, width, innerH, "Database", a.statusBar.View())
 	}
 }
 

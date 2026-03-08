@@ -57,7 +57,7 @@ func TestApp_QuitWithQ(t *testing.T) {
 	// Wait for initial data to load
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Status"))
+			return bytes.Contains(bts, []byte("Database"))
 		},
 		teatest.WithDuration(5*time.Second),
 	)
@@ -74,7 +74,7 @@ func TestApp_QuitWithCtrlC(t *testing.T) {
 	// Wait for initial render
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Status"))
+			return bytes.Contains(bts, []byte("Database"))
 		},
 		teatest.WithDuration(5*time.Second),
 	)
@@ -211,7 +211,7 @@ func TestApp_HelpOverlay(t *testing.T) {
 	// Wait for initial render
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Status"))
+			return bytes.Contains(bts, []byte("Database"))
 		},
 		teatest.WithDuration(5*time.Second),
 	)
