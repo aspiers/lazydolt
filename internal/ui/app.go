@@ -80,6 +80,10 @@ type App struct {
 	showCommit  bool
 	commitErr   string
 
+	// Reset menu
+	showResetMenu   bool
+	resetCommitHash string
+
 	// Error flash
 	errMsg string
 
@@ -144,6 +148,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		// Reset menu intercepts all keys when active
+		if a.showResetMenu {
+			return a.updateResetMenu(msg)
+		}
 		// Commit dialog intercepts all keys when active
 		if a.showCommit {
 			return a.updateCommitDialog(msg)
@@ -254,6 +262,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelCommits:
+			if msg.String() == "g" {
+				if h := a.commits.SelectedHash(); h != "" {
+					a.showResetMenu = true
+					a.resetCommitHash = h
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
@@ -317,6 +332,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CommitSuccessMsg:
 		a.showCommit = false
 		a.commitErr = ""
+		cmds = append(cmds, a.loadData())
+
+	case ResetSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
 	// Component messages that bubble up
@@ -535,7 +553,10 @@ func (a App) View() string {
 
 	result := body + "\n" + hints
 
-	// Commit dialog overlay
+	// Overlays
+	if a.showResetMenu {
+		result = a.overlayResetMenu(result)
+	}
 	if a.showCommit {
 		result = a.overlayCommitDialog(result)
 	}
@@ -1174,6 +1195,64 @@ func (a App) overlayCommitDialog(base string) string {
 	)
 }
 
+// --- Reset menu ---
+
+func (a App) updateResetMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	hash := a.resetCommitHash
+	runner := a.runner
+	switch msg.String() {
+	case "esc":
+		a.showResetMenu = false
+		a.resetCommitHash = ""
+		return a, nil
+	case "s":
+		a.showResetMenu = false
+		a.resetCommitHash = ""
+		return a, func() tea.Msg {
+			if err := runner.ResetSoft(hash); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return ResetSuccessMsg{Mode: "soft"}
+		}
+	case "h":
+		a.showResetMenu = false
+		a.resetCommitHash = ""
+		return a, func() tea.Msg {
+			if err := runner.ResetHard(hash); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return ResetSuccessMsg{Mode: "hard"}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayResetMenu(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	shortHash := a.resetCommitHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Reset to "+shortHash) + "\n\n"
+	content += "  [s] soft reset  " + dimStyle.Render("— keep working changes") + "\n"
+	content += "  [h] hard reset  " + dimStyle.Render("— discard all changes") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Help ---
 
 // helpBindings is the structured list of keybindings for the help overlay.
@@ -1201,6 +1280,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "D", "Delete branch"},
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},
+	{"Commits Panel", "g", "Reset to commit"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},

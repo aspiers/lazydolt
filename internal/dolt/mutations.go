@@ -37,6 +37,18 @@ func (r *Runner) ResetAll() error {
 	return err
 }
 
+// ResetSoft moves HEAD to the given commit, keeping working changes.
+func (r *Runner) ResetSoft(commit string) error {
+	_, err := r.Exec("reset", "--soft", commit)
+	return err
+}
+
+// ResetHard moves HEAD to the given commit and discards all changes.
+func (r *Runner) ResetHard(commit string) error {
+	_, err := r.Exec("reset", "--hard", commit)
+	return err
+}
+
 // Commit creates a new commit with the given message.
 // Returns the commit hash on success.
 func (r *Runner) Commit(message string) (string, error) {

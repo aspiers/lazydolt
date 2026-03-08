@@ -23,6 +23,9 @@ type DataLoadedMsg struct {
 // CommitSuccessMsg is sent when a commit succeeds.
 type CommitSuccessMsg struct{ Hash string }
 
+// ResetSuccessMsg is sent when a reset to commit succeeds.
+type ResetSuccessMsg struct{ Mode string }
+
 // DiffContentMsg carries diff text to the main panel.
 type DiffContentMsg struct {
 	Table   string

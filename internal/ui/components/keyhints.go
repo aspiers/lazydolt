@@ -60,6 +60,7 @@ func hintsForPanel(panel Panel) []KeyHint {
 	case PanelCommits:
 		return append([]KeyHint{
 			{Key: "Enter", Desc: "details"},
+			{Key: "g", Desc: "reset"},
 		}, global...)
 	case PanelMain:
 		return append([]KeyHint{
