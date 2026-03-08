@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -132,8 +133,9 @@ type App struct {
 	errMsg string
 
 	// Help
-	showHelp   bool
-	helpFilter textinput.Model
+	showHelp     bool
+	helpFilter   textinput.Model
+	helpViewport viewport.Model
 
 	// Layout
 	screenMode ScreenMode
@@ -208,6 +210,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
+		// Recalculate help viewport on resize if it's open
+		if a.showHelp {
+			a.syncHelpViewport()
+		}
 		// Viewport sizes will be recalculated in View()
 		return a, nil
 
@@ -286,16 +292,39 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if a.showHelp {
-			if msg.String() == "?" || msg.String() == "esc" {
+			switch msg.String() {
+			case "?", "esc":
 				a.showHelp = false
 				a.helpFilter.Reset()
 				a.helpFilter.Blur()
 				return a, nil
+			case "j", "down":
+				a.helpViewport.LineDown(1)
+				return a, nil
+			case "k", "up":
+				a.helpViewport.LineUp(1)
+				return a, nil
+			case "pgdown":
+				a.helpViewport.ViewDown()
+				return a, nil
+			case "pgup":
+				a.helpViewport.ViewUp()
+				return a, nil
+			case "home":
+				a.helpViewport.GotoTop()
+				return a, nil
+			case "end":
+				a.helpViewport.GotoBottom()
+				return a, nil
+			default:
+				// Forward to filter input
+				var cmd tea.Cmd
+				a.helpFilter, cmd = a.helpFilter.Update(msg)
+				// Rebuild viewport content and reset scroll when filter changes
+				a.syncHelpViewport()
+				a.helpViewport.GotoTop()
+				return a, cmd
 			}
-			// Forward to filter input
-			var cmd tea.Cmd
-			a.helpFilter, cmd = a.helpFilter.Update(msg)
-			return a, cmd
 		}
 
 		switch msg.String() {
@@ -407,6 +436,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showHelp = true
 			a.helpFilter.Reset()
 			a.helpFilter.Focus()
+			a.syncHelpViewport()
+			a.helpViewport.GotoTop()
 			return a, textinput.Blink
 		}
 
@@ -2281,54 +2312,165 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Main Panel", "H/L", "Scroll left/right"},
 }
 
-func (a App) renderHelp() string {
-	filter := strings.ToLower(strings.TrimSpace(a.helpFilter.Value()))
+// helpSection groups filtered bindings by section name.
+type helpSection struct {
+	Name     string
+	Bindings []struct{ Key, Desc string }
+}
 
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("lazydolt - Keyboard Shortcuts"))
-	sb.WriteString("\n\n")
-	sb.WriteString(a.helpFilter.View())
-	sb.WriteString("\n\n")
-
-	lastSection := ""
+// filteredHelpSections returns help bindings grouped by section,
+// filtered by the current help filter string.
+func filteredHelpSections(filter string) ([]helpSection, int) {
+	var sections []helpSection
 	matchCount := 0
+	sectionMap := make(map[string]int) // section name → index in sections
+
 	for _, b := range helpBindings {
-		// Filter: match against key or description (case-insensitive)
 		if filter != "" {
 			combined := strings.ToLower(b.Key + " " + b.Desc + " " + b.Section)
 			if !strings.Contains(combined, filter) {
 				continue
 			}
 		}
-
-		// Section header
-		if b.Section != lastSection {
-			if lastSection != "" {
-				sb.WriteString("\n")
-			}
-			sb.WriteString("  ")
-			sb.WriteString(lipgloss.NewStyle().Bold(true).Render(b.Section))
-			sb.WriteString("\n")
-			lastSection = b.Section
-		}
-
-		sb.WriteString(fmt.Sprintf("    %-14s%s\n", b.Key, b.Desc))
 		matchCount++
-	}
 
-	if filter != "" && matchCount == 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  No matches"))
-		sb.WriteString("\n")
+		idx, ok := sectionMap[b.Section]
+		if !ok {
+			idx = len(sections)
+			sectionMap[b.Section] = idx
+			sections = append(sections, helpSection{Name: b.Section})
+		}
+		sections[idx].Bindings = append(sections[idx].Bindings,
+			struct{ Key, Desc string }{b.Key, b.Desc})
 	}
+	return sections, matchCount
+}
 
+// renderHelpSection renders one section block as a string.
+func renderHelpSection(s helpSection) string {
+	var sb strings.Builder
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(s.Name))
 	sb.WriteString("\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("Press ? or Esc to close"))
-
-	dialogW := 54
-	if a.width < 64 {
-		dialogW = a.width - 10
+	for _, b := range s.Bindings {
+		sb.WriteString(fmt.Sprintf("  %-14s%s\n", b.Key, b.Desc))
 	}
-	box := commitBoxStyle.Width(dialogW).Render(sb.String())
+	return sb.String()
+}
+
+// sectionHeight returns the number of lines a section takes (header + bindings).
+func sectionHeight(s helpSection) int {
+	return 1 + len(s.Bindings) // header line + one line per binding
+}
+
+// renderHelpColumns lays out sections across columns, balancing height.
+func renderHelpColumns(sections []helpSection, colCount, colWidth int) string {
+	if len(sections) == 0 || colCount <= 0 {
+		return ""
+	}
+
+	// Calculate total height across all sections (including gaps between them).
+	totalH := 0
+	for _, s := range sections {
+		totalH += sectionHeight(s) + 1 // +1 for blank line between sections
+	}
+	targetH := (totalH + colCount - 1) / colCount
+
+	// Distribute sections across columns greedily.
+	columns := make([][]helpSection, colCount)
+	colHeights := make([]int, colCount)
+	col := 0
+	for _, s := range sections {
+		sh := sectionHeight(s) + 1
+		if col < colCount-1 && colHeights[col] > 0 && colHeights[col]+sh > targetH+2 {
+			col++
+		}
+		columns[col] = append(columns[col], s)
+		colHeights[col] += sh
+	}
+
+	// Render each column.
+	colStyle := lipgloss.NewStyle().Width(colWidth)
+	rendered := make([]string, colCount)
+	for i, colSections := range columns {
+		var parts []string
+		for _, s := range colSections {
+			parts = append(parts, renderHelpSection(s))
+		}
+		rendered[i] = colStyle.Render(strings.Join(parts, "\n"))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+}
+
+// helpLayout computes dialog and column dimensions for the help overlay.
+func (a App) helpLayout() (dialogW, innerW, colCount, colWidth int) {
+	dialogW = a.width - 6
+	if dialogW < 40 {
+		dialogW = 40
+	}
+	if dialogW > a.width-4 {
+		dialogW = a.width - 4
+	}
+	// Inner width after box padding (2 chars each side) and border (1 each side).
+	innerW = dialogW - 6
+
+	colCount = 1
+	if innerW >= 110 {
+		colCount = 3
+	} else if innerW >= 60 {
+		colCount = 2
+	}
+	colWidth = innerW / colCount
+	return
+}
+
+// helpViewportHeight returns the available height for the help viewport.
+func (a App) helpViewportHeight() int {
+	// header: title + blank + filter + blank = 4 lines
+	// footer: blank + hint = 2 lines
+	// box: border=2 rows, padding=2 rows
+	overhead := 2 + 2 + 4 + 2
+	vpH := (a.height - 4) - overhead
+	if vpH < 3 {
+		vpH = 3
+	}
+	return vpH
+}
+
+// syncHelpViewport rebuilds the help viewport content from current filter.
+// Must be called from Update (pointer receiver context).
+func (a *App) syncHelpViewport() {
+	filter := strings.ToLower(strings.TrimSpace(a.helpFilter.Value()))
+	_, innerW, colCount, colWidth := a.helpLayout()
+	sections, matchCount := filteredHelpSections(filter)
+
+	var body string
+	if filter != "" && matchCount == 0 {
+		body = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  No matches") + "\n"
+	} else {
+		body = renderHelpColumns(sections, colCount, colWidth)
+	}
+
+	a.helpViewport.Width = innerW
+	a.helpViewport.Height = a.helpViewportHeight()
+	a.helpViewport.SetContent(body)
+}
+
+func (a App) renderHelp() string {
+	dialogW, _, _, _ := a.helpLayout()
+
+	// Header: title + filter input.
+	header := titleStyle.Render("lazydolt - Keyboard Shortcuts") + "\n\n" +
+		a.helpFilter.View() + "\n\n"
+
+	// Footer.
+	scrollHint := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).
+		Render("j/k scroll · PgUp/PgDn page · ? or Esc to close")
+
+	// Assemble: header + viewport + footer.
+	content := header + a.helpViewport.View() + "\n\n" + scrollHint
+
+	box := commitBoxStyle.Width(dialogW).Render(content)
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, box)
 }
 
