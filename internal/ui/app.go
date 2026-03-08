@@ -110,6 +110,13 @@ type App struct {
 	stashEntries  []domain.StashEntry
 	stashCursor   int
 
+	// SQL query dialog
+	showSQL       bool
+	sqlInput      textinput.Model
+	sqlErr        string
+	sqlHistory    []string // past queries for up/down cycling
+	sqlHistoryIdx int      // -1 means current input, 0..N-1 = history
+
 	// Panel filter
 	filterInput  textinput.Model
 	filterActive bool // text input is focused
@@ -144,6 +151,11 @@ func NewApp(runner *dolt.Runner) App {
 	bi.Placeholder = "Enter branch name..."
 	bi.CharLimit = 200
 
+	si := textinput.New()
+	si.Placeholder = "SELECT * FROM ..."
+	si.CharLimit = 500
+	si.Prompt = "SQL> "
+
 	fi := textinput.New()
 	fi.Placeholder = "filter..."
 	fi.CharLimit = 100
@@ -155,19 +167,21 @@ func NewApp(runner *dolt.Runner) App {
 	hf.Prompt = "/ "
 
 	app := App{
-		runner:      runner,
-		repoName:    filepath.Base(runner.RepoDir),
-		repoParent:  filepath.Dir(runner.RepoDir),
-		focused:     components.PanelTables,
-		diffView:    components.NewDiffView(80, 20),
-		schemaView:  components.NewSchemaView(80, 20),
-		browserView: components.NewBrowserView(80, 20),
-		commitInput: ti,
-		branchInput: bi,
-		filterInput: fi,
-		helpFilter:  hf,
-		spinner:     s,
-		leftRatio:   30,
+		runner:        runner,
+		repoName:      filepath.Base(runner.RepoDir),
+		repoParent:    filepath.Dir(runner.RepoDir),
+		focused:       components.PanelTables,
+		diffView:      components.NewDiffView(80, 20),
+		schemaView:    components.NewSchemaView(80, 20),
+		browserView:   components.NewBrowserView(80, 20),
+		commitInput:   ti,
+		branchInput:   bi,
+		sqlInput:      si,
+		sqlHistoryIdx: -1,
+		filterInput:   fi,
+		helpFilter:    hf,
+		spinner:       s,
+		leftRatio:     30,
 	}
 	app.syncFocus()
 	return app
@@ -209,6 +223,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Merge menu intercepts all keys when active
 		if a.showMergeMenu {
 			return a.updateMergeMenu(msg)
+		}
+		// SQL dialog intercepts all keys when active
+		if a.showSQL {
+			return a.updateSQLDialog(msg)
 		}
 		// Stash list intercepts all keys when active
 		if a.showStashList {
@@ -364,6 +382,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.filterInput.Focus()
 				return a, textinput.Blink
 			}
+		case ":":
+			return a, a.startSQL()
 		case "S":
 			if a.statusBar.Dirty {
 				return a, a.stashCmd()
@@ -511,6 +531,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MergeAbortMsg:
 		cmds = append(cmds, a.loadData())
+
+	case SQLResultMsg:
+		// Display SQL results in the diff view
+		title := fmt.Sprintf("SQL: %s", msg.Query)
+		a.diffView.SetContent(title, msg.Result)
+		a.mainView = MainViewDiff
 
 	case StashSuccessMsg:
 		cmds = append(cmds, a.loadData())
@@ -800,6 +826,9 @@ func (a App) View() string {
 	}
 	if a.showStashList {
 		result = a.overlayStashList(result)
+	}
+	if a.showSQL {
+		result = a.overlaySQLDialog(result)
 	}
 	if a.showCommit {
 		result = a.overlayCommitDialog(result)
@@ -1494,6 +1523,98 @@ func (a *App) fetchCmd() tea.Cmd {
 	}
 }
 
+// --- SQL query dialog ---
+
+func (a *App) startSQL() tea.Cmd {
+	a.showSQL = true
+	a.sqlInput.Reset()
+	a.sqlInput.Focus()
+	a.sqlErr = ""
+	a.sqlHistoryIdx = -1
+	return textinput.Blink
+}
+
+func (a App) updateSQLDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showSQL = false
+		return a, nil
+	case "enter":
+		query := strings.TrimSpace(a.sqlInput.Value())
+		if query == "" {
+			a.sqlErr = "Query cannot be empty"
+			return a, nil
+		}
+		a.showSQL = false
+		// Add to history (avoid duplicating the most recent entry)
+		if len(a.sqlHistory) == 0 || a.sqlHistory[len(a.sqlHistory)-1] != query {
+			a.sqlHistory = append(a.sqlHistory, query)
+		}
+		runner := a.runner
+		return a, func() tea.Msg {
+			result, err := runner.SQLRaw(query)
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return SQLResultMsg{Query: query, Result: result}
+		}
+	case "up":
+		// Cycle backward through history
+		if len(a.sqlHistory) > 0 {
+			if a.sqlHistoryIdx == -1 {
+				a.sqlHistoryIdx = len(a.sqlHistory) - 1
+			} else if a.sqlHistoryIdx > 0 {
+				a.sqlHistoryIdx--
+			}
+			a.sqlInput.SetValue(a.sqlHistory[a.sqlHistoryIdx])
+			a.sqlInput.CursorEnd()
+		}
+		return a, nil
+	case "down":
+		// Cycle forward through history
+		if a.sqlHistoryIdx >= 0 {
+			if a.sqlHistoryIdx < len(a.sqlHistory)-1 {
+				a.sqlHistoryIdx++
+				a.sqlInput.SetValue(a.sqlHistory[a.sqlHistoryIdx])
+			} else {
+				a.sqlHistoryIdx = -1
+				a.sqlInput.Reset()
+			}
+			a.sqlInput.CursorEnd()
+		}
+		return a, nil
+	}
+
+	var cmd tea.Cmd
+	a.sqlInput, cmd = a.sqlInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlaySQLDialog(base string) string {
+	dialogW := 70
+	if a.width < 80 {
+		dialogW = a.width - 10
+	}
+
+	content := titleStyle.Render("SQL Query") + "\n\n"
+	content += a.sqlInput.View() + "\n\n"
+	if a.sqlErr != "" {
+		content += errorStyle.Render(a.sqlErr) + "\n"
+	}
+	histHint := ""
+	if len(a.sqlHistory) > 0 {
+		histHint = "  [↑/↓] history"
+	}
+	content += lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] execute  [Esc] cancel" + histHint)
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Commit dialog ---
 
 func (a *App) startCommit() tea.Cmd {
@@ -2005,6 +2126,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "p", "Pull from remote"},
 	{"Global", "f", "Fetch from remote"},
 	{"Global", "S", "Stash changes / show stash list"},
+	{"Global", ":", "Run SQL query"},
 	{"Global", "/", "Filter panel items"},
 	{"Global", "Esc", "Back / reset zoom / clear filter"},
 	{"Global", "?", "Toggle help"},

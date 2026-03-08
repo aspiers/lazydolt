@@ -86,6 +86,13 @@ func (r *Runner) SQL(query string) ([]map[string]interface{}, error) {
 	return result.Rows, nil
 }
 
+// SQLRaw runs a SQL query via 'dolt sql -r tabular' and returns the
+// human-readable tabular output as a string. Useful for displaying
+// arbitrary query results to the user.
+func (r *Runner) SQLRaw(query string) (string, error) {
+	return r.Exec("sql", "-r", "tabular", "-q", query)
+}
+
 // stripANSI removes ANSI escape codes from a string.
 func stripANSI(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")

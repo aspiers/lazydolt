@@ -71,6 +71,12 @@ type SchemaContentMsg struct {
 	Schema string
 }
 
+// SQLResultMsg carries the result of a SQL query to display.
+type SQLResultMsg struct {
+	Query  string
+	Result string
+}
+
 // BrowserDataMsg carries table data to the browser.
 type BrowserDataMsg struct {
 	Table   string
