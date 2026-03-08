@@ -80,6 +80,13 @@ type SQLResultMsg struct {
 	Result string
 }
 
+// CommitDetailMsg carries the diff stat for a commit's changed tables.
+type CommitDetailMsg struct {
+	Hash   string
+	Header string // commit metadata header
+	Tables []domain.DiffStatEntry
+}
+
 // BrowserDataMsg carries table data to the browser.
 type BrowserDataMsg struct {
 	Table   string

@@ -131,6 +131,38 @@ func (r *Runner) SQLRaw(query string) (string, error) {
 	return r.Exec("sql", "-r", "tabular", "-q", query)
 }
 
+// DiffStatBetween returns per-table change statistics between two revisions
+// using the dolt_diff_stat SQL function.
+func (r *Runner) DiffStatBetween(fromRef, toRef string) ([]domain.DiffStatEntry, error) {
+	query := fmt.Sprintf(
+		`SELECT table_name, rows_added, rows_deleted, rows_modified FROM dolt_diff_stat(%q, %q)`,
+		fromRef, toRef,
+	)
+	rows, err := r.SQL(query)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []domain.DiffStatEntry
+	for _, row := range rows {
+		e := domain.DiffStatEntry{}
+		if v, ok := row["table_name"].(string); ok {
+			e.TableName = v
+		}
+		if v, ok := row["rows_added"].(float64); ok {
+			e.RowsAdded = int(v)
+		}
+		if v, ok := row["rows_deleted"].(float64); ok {
+			e.RowsDeleted = int(v)
+		}
+		if v, ok := row["rows_modified"].(float64); ok {
+			e.RowsModified = int(v)
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
 // stripANSI removes ANSI escape codes from a string.
 func stripANSI(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")

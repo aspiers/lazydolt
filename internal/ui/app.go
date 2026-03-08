@@ -125,6 +125,11 @@ type App struct {
 	sqlHistory    []string // past queries for up/down cycling
 	sqlHistoryIdx int      // -1 means current input, 0..N-1 = history
 
+	// Commit detail mode: shows changed tables for a specific commit
+	commitDetailHash   string                 // non-empty when in commit detail mode
+	commitDetailTables []domain.DiffStatEntry // tables changed in the commit
+	commitDetailCursor int                    // cursor in the changed tables list
+
 	// Panel filter
 	filterInput  textinput.Model
 	filterActive bool // text input is focused
@@ -331,6 +336,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return a, tea.Quit
 		case "esc":
+			// Exit commit detail mode first
+			if a.commitDetailHash != "" {
+				a.commitDetailHash = ""
+				a.commitDetailTables = nil
+				a.commitDetailCursor = 0
+				return a, a.autoViewDiff()
+			}
 			// Esc clears active filter first
 			if a.tables.Filter != "" || a.branches.Filter != "" || a.commits.Filter != "" {
 				a.tables.Filter = ""
@@ -439,6 +451,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.syncHelpViewport()
 			a.helpViewport.GotoTop()
 			return a, textinput.Blink
+		}
+
+		// Commit detail mode: intercept tables panel navigation
+		if a.commitDetailHash != "" && a.focused == components.PanelTables {
+			switch msg.String() {
+			case "j", "down":
+				if a.commitDetailCursor < len(a.commitDetailTables)-1 {
+					a.commitDetailCursor++
+					return a, a.loadCommitTableDiffCurrent()
+				}
+				return a, nil
+			case "k", "up":
+				if a.commitDetailCursor > 0 {
+					a.commitDetailCursor--
+					return a, a.loadCommitTableDiffCurrent()
+				}
+				return a, nil
+			default:
+				// Ignore other keys in commit detail tables view
+				return a, nil
+			}
 		}
 
 		// Route to focused panel, tracking cursor changes for auto-preview.
@@ -644,7 +677,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case newBranchPromptMsg:
 		return a, a.startNewBranch()
 	case viewCommitMsg:
-		cmds = append(cmds, a.loadCommitDiff(msg.Hash))
+		cmds = append(cmds, a.loadCommitDetail(msg.Hash))
+	case CommitDetailMsg:
+		a.commitDetailHash = msg.Hash
+		a.commitDetailTables = msg.Tables
+		a.commitDetailCursor = 0
+		a.focused = components.PanelTables
+		// Load diff for the first changed table (or full diff if none)
+		if len(msg.Tables) > 0 {
+			cmds = append(cmds, a.loadCommitTableDiff(msg.Hash, msg.Tables[0].TableName, msg.Header))
+		} else {
+			cmds = append(cmds, a.loadCommitDiff(msg.Hash))
+		}
 	case BrowserDataMsg:
 		a.browserView.SetData(msg.Table, msg.Columns, msg.Rows, msg.Total, msg.Offset)
 	case browserPageMsg:
@@ -795,10 +839,21 @@ func (a App) View() string {
 			return view
 		}
 
-		// Tables panel — title includes sub-tab indicators
+		// Tables panel — title includes sub-tab indicators or commit detail
 		a.tables.Height = tablesH
-		tablesTitle := fmt.Sprintf("[1]─%s", a.tabBar())
-		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, panelView(a.tables.View()))
+		var tablesTitle, tablesContent string
+		if a.commitDetailHash != "" {
+			shortHash := a.commitDetailHash
+			if len(shortHash) > 7 {
+				shortHash = shortHash[:7]
+			}
+			tablesTitle = fmt.Sprintf("[1]─Changed in %s (%d)", shortHash, len(a.commitDetailTables))
+			tablesContent = a.renderCommitDetailTables(tablesH)
+		} else {
+			tablesTitle = fmt.Sprintf("[1]─%s", a.tabBar())
+			tablesContent = panelView(a.tables.View())
+		}
+		tablesBox := a.panelBox(components.PanelTables, leftW, tablesH, tablesTitle, tablesContent)
 
 		// Branches panel
 		a.branches.Height = branchesH
@@ -848,6 +903,9 @@ func (a App) View() string {
 	if a.filterActive {
 		hints = a.filterInput.View() + "  " +
 			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] confirm  [Esc] clear")
+	} else if a.commitDetailHash != "" {
+		hints = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).
+			Render("j/k navigate tables | Esc back | ? help")
 	} else {
 		hints = components.RenderKeyHints(a.focused, a.width, a.tables.HasConflicts())
 		// Show active filter indicator
@@ -947,8 +1005,19 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 	switch a.focused {
 	case components.PanelTables:
 		a.tables.Height = innerH
-		title := fmt.Sprintf("[1]─%s", a.tabBar())
-		return a.panelBox(components.PanelTables, width, innerH, title, content(a.tables.View()))
+		var title, body string
+		if a.commitDetailHash != "" {
+			shortHash := a.commitDetailHash
+			if len(shortHash) > 7 {
+				shortHash = shortHash[:7]
+			}
+			title = fmt.Sprintf("[1]─Changed in %s (%d)", shortHash, len(a.commitDetailTables))
+			body = a.renderCommitDetailTables(innerH)
+		} else {
+			title = fmt.Sprintf("[1]─%s", a.tabBar())
+			body = content(a.tables.View())
+		}
+		return a.panelBox(components.PanelTables, width, innerH, title, body)
 	case components.PanelBranches:
 		a.branches.Height = innerH
 		title := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
@@ -1518,6 +1587,80 @@ func (a *App) loadCommitDiff(hash string) tea.Cmd {
 		}
 		return DiffContentMsg{Table: hash[:7], Content: content}
 	}
+}
+
+// loadCommitDetail loads the diff stat for a commit and enters commit detail mode.
+func (a *App) loadCommitDetail(hash string) tea.Cmd {
+	runner := a.runner
+	var header string
+	for _, c := range a.commits.Commits {
+		if c.Hash == hash {
+			header = fmt.Sprintf("commit %s\nAuthor: %s <%s>\nDate:   %s\n\n    %s\n",
+				c.Hash,
+				c.Author, c.Email,
+				c.Date.Format("Mon Jan 2 15:04:05 2006"),
+				c.Message,
+			)
+			break
+		}
+	}
+	return func() tea.Msg {
+		tables, err := runner.DiffStatBetween(hash+"~1", hash)
+		if err != nil {
+			// Initial commit has no parent — try without parent
+			tables, err = runner.DiffStatBetween("", hash)
+			if err != nil {
+				// Fall back to empty table list
+				tables = nil
+			}
+		}
+		return CommitDetailMsg{Hash: hash, Header: header, Tables: tables}
+	}
+}
+
+// loadCommitTableDiff loads the diff for a single table within a commit.
+func (a *App) loadCommitTableDiff(hash, table, header string) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		content, err := runner.Exec("diff", hash+"^", hash, table)
+		if err != nil {
+			// Initial commit
+			content, err = runner.Exec("diff", hash, table)
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+		}
+		if header != "" {
+			content = header + "\n" + content
+		}
+		return DiffContentMsg{Table: table, Content: content}
+	}
+}
+
+// loadCommitTableDiffCurrent loads the diff for the currently selected
+// table in commit detail mode.
+func (a *App) loadCommitTableDiffCurrent() tea.Cmd {
+	if a.commitDetailHash == "" || len(a.commitDetailTables) == 0 {
+		return nil
+	}
+	table := a.commitDetailTables[a.commitDetailCursor].TableName
+	header := a.commitHeader(a.commitDetailHash)
+	return a.loadCommitTableDiff(a.commitDetailHash, table, header)
+}
+
+// commitHeader builds the metadata header for a commit from cached data.
+func (a *App) commitHeader(hash string) string {
+	for _, c := range a.commits.Commits {
+		if c.Hash == hash {
+			return fmt.Sprintf("commit %s\nAuthor: %s <%s>\nDate:   %s\n\n    %s\n",
+				c.Hash,
+				c.Author, c.Email,
+				c.Date.Format("Mon Jan 2 15:04:05 2006"),
+				c.Message,
+			)
+		}
+	}
+	return ""
 }
 
 // --- Mutation commands ---
@@ -2262,6 +2405,52 @@ func (a App) overlayStashList(base string) string {
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
 	)
+}
+
+// --- Commit detail tables ---
+
+// renderCommitDetailTables renders the list of changed tables for commit
+// detail mode, shown in place of the normal tables panel.
+func (a App) renderCommitDetailTables(height int) string {
+	if len(a.commitDetailTables) == 0 {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  No tables changed")
+	}
+
+	selectedStyle := lipgloss.NewStyle().Reverse(true)
+	statStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	var lines []string
+	for i, t := range a.commitDetailTables {
+		// Build stat summary: +N -N ~N
+		var stats []string
+		if t.RowsAdded > 0 {
+			stats = append(stats, fmt.Sprintf("+%d", t.RowsAdded))
+		}
+		if t.RowsDeleted > 0 {
+			stats = append(stats, fmt.Sprintf("-%d", t.RowsDeleted))
+		}
+		if t.RowsModified > 0 {
+			stats = append(stats, fmt.Sprintf("~%d", t.RowsModified))
+		}
+		stat := ""
+		if len(stats) > 0 {
+			stat = " " + statStyle.Render(strings.Join(stats, " "))
+		}
+
+		line := fmt.Sprintf("  %s%s", t.TableName, stat)
+		if i == a.commitDetailCursor {
+			// Apply reverse to the table name only, keep stat styling
+			line = fmt.Sprintf("  %s%s", selectedStyle.Render(t.TableName), stat)
+		}
+		lines = append(lines, line)
+	}
+
+	// Truncate to height
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // --- Help ---

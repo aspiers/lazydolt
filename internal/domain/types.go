@@ -91,6 +91,15 @@ type CommandLogEntry struct {
 	Time    time.Time // when the command was executed
 }
 
+// DiffStatEntry holds row-level change statistics for a single table
+// between two revisions.
+type DiffStatEntry struct {
+	TableName    string `json:"table_name"`
+	RowsAdded    int    `json:"rows_added"`
+	RowsDeleted  int    `json:"rows_deleted"`
+	RowsModified int    `json:"rows_modified"`
+}
+
 // QueryResult holds the result of an arbitrary SQL query.
 type QueryResult struct {
 	Columns []string                 // column names in display order
