@@ -83,6 +83,14 @@ type StashEntry struct {
 	Message string // commit message at stash time
 }
 
+// CommandLogEntry records a single dolt CLI invocation and its result.
+type CommandLogEntry struct {
+	Command string    // full command (e.g. "dolt add users")
+	Output  string    // stdout/stderr output (truncated for display)
+	Error   bool      // true if command failed
+	Time    time.Time // when the command was executed
+}
+
 // QueryResult holds the result of an arbitrary SQL query.
 type QueryResult struct {
 	Columns []string                 // column names in display order

@@ -38,11 +38,12 @@ const (
 	MainViewDiff    MainView = iota // "Status" tab — shows diff
 	MainViewBrowser                 // "Browse" tab — shows table data
 	MainViewSchema                  // "Schema" tab — shows DDL
+	MainViewLog                     // "Log" tab — shows command log
 	mainViewCount                   // sentinel for wrapping
 )
 
 // mainViewTabNames returns the display names for the right panel tabs.
-var mainViewTabNames = [mainViewCount]string{"Status", "Browse", "Schema"}
+var mainViewTabNames = [mainViewCount]string{"Status", "Browse", "Schema", "Log"}
 
 // ScreenMode controls the column split ratio (like lazygit's +/_ cycling).
 type ScreenMode int
@@ -76,6 +77,7 @@ type App struct {
 	diffView    components.DiffView
 	schemaView  components.SchemaView
 	browserView components.BrowserView
+	logView     components.LogView
 
 	// Commit dialog
 	commitInput textinput.Model
@@ -174,6 +176,7 @@ func NewApp(runner *dolt.Runner) App {
 		diffView:      components.NewDiffView(80, 20),
 		schemaView:    components.NewSchemaView(80, 20),
 		browserView:   components.NewBrowserView(80, 20),
+		logView:       components.NewLogView(80, 20),
 		commitInput:   ti,
 		branchInput:   bi,
 		sqlInput:      si,
@@ -466,6 +469,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				a.browserView, cmd = a.browserView.Update(msg)
 				cmds = append(cmds, cmd)
+			case MainViewLog:
+				var cmd tea.Cmd
+				a.logView, cmd = a.logView.Update(msg)
+				cmds = append(cmds, cmd)
 			}
 		}
 		if a.focusedCursor() != prevCursor {
@@ -609,6 +616,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.browserView, cmd = a.browserView.Update(msg)
 			cmds = append(cmds, cmd)
+		case MainViewLog:
+			var cmd tea.Cmd
+			a.logView, cmd = a.logView.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -657,6 +668,7 @@ func (a App) View() string {
 		a.diffView.SetSize(mainInnerW, botInnerH-1)
 		a.schemaView.SetSize(mainInnerW, botInnerH-1)
 		a.browserView.SetSize(mainInnerW, botInnerH-1)
+		a.logView.SetSize(mainInnerW, botInnerH-1)
 
 		mainTitle := a.mainPanelTitle()
 		mainContent := a.mainPanelContent()
@@ -759,6 +771,7 @@ func (a App) View() string {
 			a.diffView.SetSize(mainInnerW, mainInnerH-1)
 			a.schemaView.SetSize(mainInnerW, mainInnerH-1)
 			a.browserView.SetSize(mainInnerW, mainInnerH-1)
+			a.logView.SetSize(mainInnerW, mainInnerH-1)
 
 			mainTitle := a.mainPanelTitle()
 			mainContent := a.mainPanelContent()
@@ -1064,6 +1077,8 @@ func (a App) mainPanelTitle() string {
 			return "Browse: " + a.browserView.Table
 		}
 		return "Table Browser"
+	case MainViewLog:
+		return fmt.Sprintf("Command Log (%d)", len(a.runner.CommandLog()))
 	}
 	return ""
 }
@@ -1076,6 +1091,11 @@ func (a App) mainPanelContent() string {
 		return a.schemaView.View()
 	case MainViewBrowser:
 		return a.browserView.View()
+	case MainViewLog:
+		// Refresh log entries from runner before rendering
+		a.logView.Entries = a.runner.CommandLog()
+		a.logView.RefreshContent()
+		return a.logView.View()
 	}
 	return ""
 }

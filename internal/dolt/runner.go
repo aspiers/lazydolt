@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/aspiers/lazydolt/internal/domain"
 )
 
 // ansiRegex strips ANSI escape codes from dolt output.
@@ -18,6 +22,9 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 type Runner struct {
 	DoltPath string // path to dolt binary
 	RepoDir  string // working directory for commands
+
+	logMu  sync.Mutex
+	cmdLog []domain.CommandLogEntry
 }
 
 // NewRunner creates a Runner for the given repository directory.
@@ -50,17 +57,48 @@ func NewRunner(repoDir string) (*Runner, error) {
 func (r *Runner) Exec(args ...string) (string, error) {
 	cmd := exec.Command(r.DoltPath, args...)
 	cmd.Dir = r.RepoDir
+	cmdStr := "dolt " + strings.Join(args, " ")
 
 	out, err := cmd.Output()
 	if err != nil {
+		errMsg := ""
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := strings.TrimSpace(string(exitErr.Stderr))
-			return "", fmt.Errorf("dolt %s: %s", strings.Join(args, " "), stderr)
+			errMsg = strings.TrimSpace(string(exitErr.Stderr))
+		} else {
+			errMsg = err.Error()
 		}
-		return "", fmt.Errorf("dolt %s: %w", strings.Join(args, " "), err)
+		r.logCommand(cmdStr, errMsg, true)
+		return "", fmt.Errorf("%s: %s", cmdStr, errMsg)
 	}
 
-	return stripANSI(string(out)), nil
+	result := stripANSI(string(out))
+	r.logCommand(cmdStr, result, false)
+	return result, nil
+}
+
+// logCommand records a command execution in the internal log.
+func (r *Runner) logCommand(cmd, output string, isErr bool) {
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	r.cmdLog = append(r.cmdLog, domain.CommandLogEntry{
+		Command: cmd,
+		Output:  output,
+		Error:   isErr,
+		Time:    time.Now(),
+	})
+	// Keep at most 100 entries
+	if len(r.cmdLog) > 100 {
+		r.cmdLog = r.cmdLog[len(r.cmdLog)-100:]
+	}
+}
+
+// CommandLog returns a copy of all recorded command log entries.
+func (r *Runner) CommandLog() []domain.CommandLogEntry {
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	result := make([]domain.CommandLogEntry, len(r.cmdLog))
+	copy(result, r.cmdLog)
+	return result
 }
 
 // SQL runs a SQL query via 'dolt sql -r json' and returns parsed rows.
