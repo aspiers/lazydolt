@@ -232,12 +232,20 @@ bd close bd-42 --reason "Completed" --json
 
 ### Workflow for AI Agents
 
+**CRITICAL: NEVER stop to ask which task to work on. NEVER ask "want me
+to continue?" or "shall I pick up the next task?". ALWAYS automatically
+pick the highest-priority ready task and start working on it immediately.
+When one task is done, immediately start the next. The user's time and
+money is wasted every time you stop to ask.**
+
 1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task atomically**: `bd update <id> --claim`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
+2. **Pick the highest-priority task** — sort by priority (P0 first), break ties by age
+3. **Claim your task atomically**: `bd update <id> --claim`
+4. **Work on it**: Implement, test, document
+5. **Discover new work?** Create linked issue:
    - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
+6. **Complete**: `bd close <id> --reason "Done"`
+7. **Immediately start the next task** — go back to step 1, do NOT stop
 
 ### Backup & Export
 
