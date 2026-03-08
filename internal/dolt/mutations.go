@@ -70,6 +70,21 @@ func (r *Runner) Commit(message string) (string, error) {
 	return matches[1], nil
 }
 
+// Push pushes the current branch to the remote.
+func (r *Runner) Push() (string, error) {
+	return r.Exec("push")
+}
+
+// Pull fetches and merges from the remote.
+func (r *Runner) Pull() (string, error) {
+	return r.Exec("pull")
+}
+
+// Fetch downloads objects and refs from the remote.
+func (r *Runner) Fetch() (string, error) {
+	return r.Exec("fetch")
+}
+
 // Checkout switches to the given branch.
 func (r *Runner) Checkout(branch string) error {
 	_, err := r.Exec("checkout", branch)

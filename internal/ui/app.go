@@ -245,6 +245,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "=":
 			a.leftRatio = 30
 			return a, nil
+		case "P":
+			return a, a.pushCmd()
+		case "p":
+			return a, a.pullCmd()
+		case "f":
+			return a, a.fetchCmd()
 		case "?":
 			a.showHelp = true
 			a.helpFilter.Reset()
@@ -338,6 +344,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case ResetSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case RemoteOpSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
 	// Component messages that bubble up
@@ -1124,6 +1133,38 @@ func (a *App) deleteBranchCmd(branch string) tea.Cmd {
 	}
 }
 
+// --- Remote operations ---
+
+func (a *App) pushCmd() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if _, err := runner.Push(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return RemoteOpSuccessMsg{Op: "push"}
+	}
+}
+
+func (a *App) pullCmd() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if _, err := runner.Pull(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return RemoteOpSuccessMsg{Op: "pull"}
+	}
+}
+
+func (a *App) fetchCmd() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		if _, err := runner.Fetch(); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return RemoteOpSuccessMsg{Op: "fetch"}
+	}
+}
+
 // --- Commit dialog ---
 
 func (a *App) startCommit() tea.Cmd {
@@ -1274,6 +1315,9 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "+ / _", "Zoom panel"},
 	{"Global", "< / >", "Narrow / widen left column"},
 	{"Global", "=", "Reset column width"},
+	{"Global", "P", "Push to remote"},
+	{"Global", "p", "Pull from remote"},
+	{"Global", "f", "Fetch from remote"},
 	{"Global", "Esc", "Back / reset zoom"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},

@@ -40,6 +40,7 @@ func hintsForPanel(panel Panel) []KeyHint {
 		{Key: "H/L", Desc: "scroll"},
 		{Key: "Esc", Desc: "back"},
 		{Key: "c", Desc: "commit"},
+		{Key: "P/p/f", Desc: "push/pull/fetch"},
 		{Key: "?", Desc: "help"},
 		{Key: "q", Desc: "quit"},
 	}

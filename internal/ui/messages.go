@@ -26,6 +26,9 @@ type CommitSuccessMsg struct{ Hash string }
 // ResetSuccessMsg is sent when a reset to commit succeeds.
 type ResetSuccessMsg struct{ Mode string }
 
+// RemoteOpSuccessMsg is sent when a push/pull/fetch succeeds.
+type RemoteOpSuccessMsg struct{ Op string }
+
 // DiffContentMsg carries diff text to the main panel.
 type DiffContentMsg struct {
 	Table   string
