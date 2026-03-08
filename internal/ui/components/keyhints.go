@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	hintKeyStyle = lipgloss.NewStyle().Bold(true)
+	hintKeyStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	hintSepStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
