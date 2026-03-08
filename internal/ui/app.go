@@ -89,6 +89,7 @@ type App struct {
 
 	// Layout
 	screenMode ScreenMode
+	leftRatio  int // left column width percentage (default 30)
 
 	// Loading state
 	spinner    spinner.Model
@@ -120,6 +121,7 @@ func NewApp(runner *dolt.Runner) App {
 		commitInput: ti,
 		helpFilter:  hf,
 		spinner:     s,
+		leftRatio:   30,
 	}
 	app.syncFocus()
 	return app
@@ -219,6 +221,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "_":
 			a.screenMode = (a.screenMode + screenModeCount - 1) % screenModeCount
+			return a, nil
+		case "<":
+			if a.leftRatio > 10 {
+				a.leftRatio -= 5
+			}
+			return a, nil
+		case ">":
+			if a.leftRatio < 90 {
+				a.leftRatio += 5
+			}
+			return a, nil
+		case "=":
+			a.leftRatio = 30
 			return a, nil
 		case "?":
 			a.showHelp = true
@@ -600,7 +615,7 @@ func (a App) leftColumnWidth() int {
 	case ScreenFullscreen:
 		return a.width
 	default: // ScreenNormal
-		w := a.width * 30 / 100
+		w := a.width * a.leftRatio / 100
 		if w < 24 {
 			w = 24
 		}
@@ -1162,6 +1177,8 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "1-3", "Jump to left panel"},
 	{"Global", "c", "Commit"},
 	{"Global", "+ / _", "Zoom panel"},
+	{"Global", "< / >", "Narrow / widen left column"},
+	{"Global", "=", "Reset column width"},
 	{"Global", "Esc", "Back / reset zoom"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
