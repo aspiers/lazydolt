@@ -55,10 +55,11 @@ const (
 
 // App is the root Bubble Tea model.
 type App struct {
-	runner   *dolt.Runner
-	repoName string
-	width    int
-	height   int
+	runner     *dolt.Runner
+	repoName   string
+	repoParent string
+	width      int
+	height     int
 
 	// Focus
 	focused components.Panel
@@ -118,6 +119,7 @@ func NewApp(runner *dolt.Runner) App {
 	app := App{
 		runner:      runner,
 		repoName:    filepath.Base(runner.RepoDir),
+		repoParent:  filepath.Dir(runner.RepoDir),
 		focused:     components.PanelTables,
 		diffView:    components.NewDiffView(80, 20),
 		schemaView:  components.NewSchemaView(80, 20),
@@ -305,6 +307,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.statusBar.Branch = msg.Branch
 		a.statusBar.Dirty = msg.Dirty
 		a.statusBar.RepoDir = a.repoName
+		a.statusBar.ParentDir = a.repoParent
 		a.tables.Tables = msg.Tables
 		a.branches.Branches = msg.Branches
 		a.commits.Commits = msg.Commits
@@ -396,9 +399,14 @@ func (a App) View() string {
 		return a.renderHelp()
 	}
 
-	const statusInnerH = 2 // branch line + dirty marker (title is in border)
-	const borderH = 2      // top + bottom border per panel
-	const hintsH = 1       // key hints bar
+	// Ensure status bar width is set for Lines() calculation.
+	// In ScreenNormal, leftColumnWidth()-2; in other modes, width-2.
+	if a.statusBar.Width == 0 {
+		a.statusBar.Width = a.leftColumnWidth() - 2
+	}
+	statusInnerH := a.statusBar.Lines() // 2 or 3 depending on path wrapping
+	const borderH = 2                   // top + bottom border per panel
+	const hintsH = 1                    // key hints bar
 
 	var body string
 
