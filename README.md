@@ -4,16 +4,23 @@ A terminal UI for [Dolt](https://www.dolthub.com/blog/2021-09-17-dolt/) database
 
 Built with Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
+![lazydolt demo](demo.gif)
+
 ## Features
 
-- **Table management** — view, stage, and unstage tables
-- **Branch operations** — checkout, create, and delete branches
-- **Commit history** — browse commits and view diffs
+- **Table management** — view, stage, unstage, and discard table changes
+- **Branch operations** — checkout, create, rename, merge, and delete branches
+- **Merge conflict resolution** — resolve conflicts with ours/theirs or abort merge
+- **Commit history** — browse commits with metadata and view diffs
 - **Diff viewer** — color-coded diffs with scrolling
 - **Schema viewer** — syntax-highlighted CREATE TABLE statements
 - **Table data browser** — paginated, formatted table viewer
+- **SQL query panel** — run arbitrary SQL queries with `:` key
+- **Stash support** — stash/pop/drop changes with `S` key
+- **Command log** — persistent log of all dolt CLI commands and errors
+- **Search/filter** — filter tables, branches, and commits with `/`
 - **Commit dialog** — stage changes and commit from the TUI
-- **Zoomable layout** — zoom panels with `+` / `_` keys
+- **Zoomable layout** — zoom panels with `+` / `_` keys, adjustable column width
 
 ## Requirements
 
@@ -50,8 +57,14 @@ lazydolt /path/to/dolt/repo
 | `Tab` / `Shift+Tab` | Next / previous panel |
 | `1`-`3` | Jump to panel |
 | `c` | Commit |
+| `:` | SQL query |
+| `S` | Stash / show stash list |
+| `R` | Refresh all data |
+| `P` / `p` / `f` | Push / pull / fetch |
+| `/` | Filter panel items |
 | `+` / `_` | Zoom panel |
-| `Esc` | Back / reset zoom |
+| `<` / `>` / `=` | Adjust column width |
+| `Esc` | Back / reset zoom / clear filter |
 | `?` | Toggle help |
 
 ### Tables Panel
@@ -71,7 +84,9 @@ lazydolt /path/to/dolt/repo
 |-----|--------|
 | `j` / `k` | Navigate |
 | `Enter` | Checkout branch |
+| `m` | Merge into current |
 | `n` | New branch |
+| `r` | Rename branch |
 | `D` | Delete branch |
 
 ### Commits Panel
@@ -80,6 +95,8 @@ lazydolt /path/to/dolt/repo
 |-----|--------|
 | `j` / `k` | Navigate |
 | `Enter` | View commit details |
+| `A` | Amend last commit |
+| `g` | Reset to commit |
 
 ## Architecture
 
