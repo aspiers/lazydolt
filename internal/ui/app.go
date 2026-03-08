@@ -385,6 +385,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.filterInput.Focus()
 				return a, textinput.Blink
 			}
+		case "R":
+			return a, a.loadData()
 		case ":":
 			return a, a.startSQL()
 		case "S":
@@ -2145,6 +2147,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "P", "Push to remote"},
 	{"Global", "p", "Pull from remote"},
 	{"Global", "f", "Fetch from remote"},
+	{"Global", "R", "Refresh all data"},
 	{"Global", "S", "Stash changes / show stash list"},
 	{"Global", ":", "Run SQL query"},
 	{"Global", "/", "Filter panel items"},
