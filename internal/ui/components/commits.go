@@ -13,9 +13,12 @@ import (
 )
 
 var (
-	commitHashStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
-	commitAuthorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")) // dim
-	commitDateStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")) // dim
+	commitHashStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+	commitDateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")) // dim
+
+	// authorColors are the ANSI colors used for per-author initials,
+	// matching lazygit's approach of deterministic color per author.
+	authorColors = []lipgloss.Color{"1", "2", "3", "4", "5", "6", "9", "10", "11", "12", "13", "14"}
 )
 
 // CommitsModel displays a scrollable list of commits.
@@ -86,21 +89,24 @@ func (m CommitsModel) View() string {
 			msg = msg[:37] + "..."
 		}
 
+		authorInit := initials(c.Author)
+		authorStyle := authorColorStyle(c.Author)
+
 		var line string
 		if selected {
 			hStyle := commitHashStyle.Reverse(true)
-			aStyle := commitAuthorStyle.Reverse(true)
+			aStyle := authorStyle.Reverse(true)
 			dStyle := commitDateStyle.Reverse(true)
 			sp := selectedStyle.Render(" ")
 			line = hStyle.Render(hash) + sp +
+				aStyle.Render(authorInit) + sp +
 				selectedStyle.Render(msg) + sp +
-				aStyle.Render(initials(c.Author)) + sp +
 				dStyle.Render(relativeTime(c.Date))
 		} else {
 			line = fmt.Sprintf("%s %s %s %s",
 				commitHashStyle.Render(hash),
+				authorStyle.Render(authorInit),
 				msg,
-				commitAuthorStyle.Render(initials(c.Author)),
 				commitDateStyle.Render(relativeTime(c.Date)),
 			)
 		}
@@ -120,6 +126,17 @@ func (m CommitsModel) SelectedHash() string {
 
 // Message types for parent to handle.
 type ViewCommitMsg struct{ Hash string }
+
+// authorColorStyle returns a lipgloss style with a deterministic foreground
+// color derived from the author name, so each committer gets a consistent
+// color across the list.
+func authorColorStyle(name string) lipgloss.Style {
+	var h uint32
+	for _, c := range name {
+		h = h*31 + uint32(c)
+	}
+	return lipgloss.NewStyle().Foreground(authorColors[h%uint32(len(authorColors))])
+}
 
 // initials extracts uppercase initials from a name, e.g.
 // "Adam Spiers" → "AS", "alice" → "A".
