@@ -121,3 +121,13 @@ func (r *Runner) DeleteBranch(name string) error {
 	_, err := r.Exec("branch", "-d", name)
 	return err
 }
+
+// Merge merges the given branch into the current branch.
+func (r *Runner) Merge(branch string) (string, error) {
+	return r.Exec("merge", branch)
+}
+
+// MergeSquash merges the given branch into the current branch as a squash.
+func (r *Runner) MergeSquash(branch string) (string, error) {
+	return r.Exec("merge", "--squash", branch)
+}

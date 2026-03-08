@@ -91,6 +91,10 @@ type App struct {
 	showBranch  bool
 	branchErr   string
 
+	// Merge menu
+	showMergeMenu bool
+	mergeBranch   string
+
 	// Discard confirmation
 	showDiscardConfirm bool
 	discardTable       string
@@ -172,6 +176,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset menu intercepts all keys when active
 		if a.showResetMenu {
 			return a.updateResetMenu(msg)
+		}
+		// Merge menu intercepts all keys when active
+		if a.showMergeMenu {
+			return a.updateMergeMenu(msg)
 		}
 		// Commit dialog intercepts all keys when active
 		if a.showCommit {
@@ -297,6 +305,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tables, cmd = a.tables.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelBranches:
+			if msg.String() == "m" {
+				if b := a.branches.SelectedBranch(); b != "" {
+					a.showMergeMenu = true
+					a.mergeBranch = b
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
@@ -381,6 +396,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case RemoteOpSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case MergeSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
 	case NewBranchSuccessMsg:
@@ -619,6 +637,9 @@ func (a App) View() string {
 	}
 	if a.showResetMenu {
 		result = a.overlayResetMenu(result)
+	}
+	if a.showMergeMenu {
+		result = a.overlayMergeMenu(result)
 	}
 	if a.showCommit {
 		result = a.overlayCommitDialog(result)
@@ -1495,6 +1516,59 @@ func (a App) overlayResetMenu(base string) string {
 	)
 }
 
+// --- Merge menu ---
+
+func (a App) updateMergeMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	branch := a.mergeBranch
+	runner := a.runner
+	switch msg.String() {
+	case "esc":
+		a.showMergeMenu = false
+		a.mergeBranch = ""
+		return a, nil
+	case "m":
+		a.showMergeMenu = false
+		a.mergeBranch = ""
+		return a, func() tea.Msg {
+			if _, err := runner.Merge(branch); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return MergeSuccessMsg{Branch: branch}
+		}
+	case "s":
+		a.showMergeMenu = false
+		a.mergeBranch = ""
+		return a, func() tea.Msg {
+			if _, err := runner.MergeSquash(branch); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return MergeSuccessMsg{Branch: branch}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayMergeMenu(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Merge "+a.mergeBranch) + "\n\n"
+	content += "  [m] merge        " + dimStyle.Render("— regular merge") + "\n"
+	content += "  [s] squash merge " + dimStyle.Render("— squash into one commit") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Help ---
 
 // helpBindings is the structured list of keybindings for the help overlay.
@@ -1522,6 +1596,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},
 	{"Branches Panel", "Enter", "Checkout branch"},
+	{"Branches Panel", "m", "Merge into current"},
 	{"Branches Panel", "n", "New branch"},
 	{"Branches Panel", "D", "Delete branch"},
 	{"Commits Panel", "j/k", "Navigate"},

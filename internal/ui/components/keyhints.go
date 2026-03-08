@@ -56,6 +56,7 @@ func hintsForPanel(panel Panel) []KeyHint {
 	case PanelBranches:
 		return append([]KeyHint{
 			{Key: "Enter", Desc: "checkout"},
+			{Key: "m", Desc: "merge"},
 			{Key: "n", Desc: "new"},
 			{Key: "D", Desc: "delete"},
 		}, global...)

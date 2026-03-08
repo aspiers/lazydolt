@@ -51,13 +51,13 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 		case "L":
 			m.HScroll += HScrollStep
 		case "enter":
-			if b := m.selectedBranch(); b != "" {
+			if b := m.SelectedBranch(); b != "" {
 				return m, func() tea.Msg { return CheckoutBranchMsg{Branch: b} }
 			}
 		case "n":
 			return m, func() tea.Msg { return NewBranchPromptMsg{} }
 		case "D":
-			if b := m.selectedBranch(); b != "" {
+			if b := m.SelectedBranch(); b != "" {
 				return m, func() tea.Msg { return DeleteBranchMsg{Branch: b} }
 			}
 		}
@@ -116,7 +116,8 @@ func (m BranchesModel) View() string {
 	return HScrollContent(s, m.HScroll)
 }
 
-func (m BranchesModel) selectedBranch() string {
+// SelectedBranch returns the name of the currently selected branch.
+func (m BranchesModel) SelectedBranch() string {
 	if m.Cursor >= 0 && m.Cursor < len(m.Branches) {
 		return m.Branches[m.Cursor].Name
 	}
