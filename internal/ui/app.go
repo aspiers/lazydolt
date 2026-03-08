@@ -84,7 +84,8 @@ type App struct {
 	errMsg string
 
 	// Help
-	showHelp bool
+	showHelp   bool
+	helpFilter textinput.Model
 
 	// Layout
 	screenMode ScreenMode
@@ -104,6 +105,11 @@ func NewApp(runner *dolt.Runner) App {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 
+	hf := textinput.New()
+	hf.Placeholder = "Type to filter..."
+	hf.CharLimit = 50
+	hf.Prompt = "/ "
+
 	app := App{
 		runner:      runner,
 		repoName:    filepath.Base(runner.RepoDir),
@@ -112,6 +118,7 @@ func NewApp(runner *dolt.Runner) App {
 		schemaView:  components.NewSchemaView(80, 20),
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
+		helpFilter:  hf,
 		spinner:     s,
 	}
 	app.syncFocus()
@@ -142,9 +149,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.showHelp {
 			if msg.String() == "?" || msg.String() == "esc" {
 				a.showHelp = false
+				a.helpFilter.Reset()
+				a.helpFilter.Blur()
 				return a, nil
 			}
-			return a, nil
+			// Forward to filter input
+			var cmd tea.Cmd
+			a.helpFilter, cmd = a.helpFilter.Update(msg)
+			return a, cmd
 		}
 
 		switch msg.String() {
@@ -210,7 +222,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "?":
 			a.showHelp = true
-			return a, nil
+			a.helpFilter.Reset()
+			a.helpFilter.Focus()
+			return a, textinput.Blink
 		}
 
 		// Route to focused panel, tracking cursor changes for auto-preview.
@@ -1129,45 +1143,83 @@ func (a App) overlayCommitDialog(base string) string {
 
 // --- Help ---
 
+// helpBindings is the structured list of keybindings for the help overlay.
+// Each entry is a [section, key, description] triple; section headers have
+// an empty key.
+var helpBindings = []struct{ Section, Key, Desc string }{
+	{"Global", "q / Ctrl+C", "Quit"},
+	{"Global", "Tab / S-Tab", "Next / previous panel (1-2-3-main)"},
+	{"Global", "1-3", "Jump to left panel"},
+	{"Global", "c", "Commit"},
+	{"Global", "+ / _", "Zoom panel"},
+	{"Global", "Esc", "Back / reset zoom"},
+	{"Global", "?", "Toggle help"},
+	{"Tables Panel", "j/k", "Navigate"},
+	{"Tables Panel", "Space", "Stage/unstage table"},
+	{"Tables Panel", "a", "Stage all"},
+	{"Tables Panel", "d", "View diff"},
+	{"Tables Panel", "s", "View schema"},
+	{"Tables Panel", "Enter", "Browse table data"},
+	{"Branches Panel", "j/k", "Navigate"},
+	{"Branches Panel", "Enter", "Checkout branch"},
+	{"Branches Panel", "n", "New branch"},
+	{"Branches Panel", "D", "Delete branch"},
+	{"Commits Panel", "j/k", "Navigate"},
+	{"Commits Panel", "Enter", "View commit details"},
+	{"Main Panel", "j/k", "Scroll up/down"},
+	{"Main Panel", "PgUp/PgDn", "Page up/down"},
+	{"Main Panel", "u/d", "Half page up/down"},
+	{"Main Panel", "H/L", "Scroll left/right"},
+}
+
 func (a App) renderHelp() string {
-	help := `lazydolt - Keyboard Shortcuts
+	filter := strings.ToLower(strings.TrimSpace(a.helpFilter.Value()))
 
-  Global
-    q / Ctrl+C    Quit
-    Tab / S-Tab   Next / previous panel (1-2-3-main)
-    1-3           Jump to left panel
-    c             Commit
-    + / _         Zoom panel
-    Esc           Back / reset zoom
-    ?             Toggle help
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Render("lazydolt - Keyboard Shortcuts"))
+	sb.WriteString("\n\n")
+	sb.WriteString(a.helpFilter.View())
+	sb.WriteString("\n\n")
 
-  Tables Panel
-    j/k           Navigate
-    Space         Stage/unstage table
-    a             Stage all
-    d             View diff
-    s             View schema
-    Enter         Browse table data
+	lastSection := ""
+	matchCount := 0
+	for _, b := range helpBindings {
+		// Filter: match against key or description (case-insensitive)
+		if filter != "" {
+			combined := strings.ToLower(b.Key + " " + b.Desc + " " + b.Section)
+			if !strings.Contains(combined, filter) {
+				continue
+			}
+		}
 
-  Branches Panel
-    j/k           Navigate
-    Enter         Checkout branch
-    n             New branch
-    D             Delete branch
+		// Section header
+		if b.Section != lastSection {
+			if lastSection != "" {
+				sb.WriteString("\n")
+			}
+			sb.WriteString("  ")
+			sb.WriteString(lipgloss.NewStyle().Bold(true).Render(b.Section))
+			sb.WriteString("\n")
+			lastSection = b.Section
+		}
 
-  Commits Panel
-    j/k           Navigate
-    Enter         View commit details
+		sb.WriteString(fmt.Sprintf("    %-14s%s\n", b.Key, b.Desc))
+		matchCount++
+	}
 
-  Main Panel (Tab to focus)
-    j/k           Scroll up/down
-    PgUp/PgDn     Page up/down
-    u/d           Half page up/down
-    H/L           Scroll left/right
+	if filter != "" && matchCount == 0 {
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  No matches"))
+		sb.WriteString("\n")
+	}
 
-Press ? or Esc to close`
+	sb.WriteString("\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("Press ? or Esc to close"))
 
-	box := commitBoxStyle.Width(50).Render(help)
+	dialogW := 54
+	if a.width < 64 {
+		dialogW = a.width - 10
+	}
+	box := commitBoxStyle.Width(dialogW).Render(sb.String())
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, box)
 }
 

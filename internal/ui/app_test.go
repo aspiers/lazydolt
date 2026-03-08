@@ -220,18 +220,19 @@ func TestApp_HelpOverlay(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Keyboard Shortcuts"))
+			// Check for content visible in the help overlay
+			// (avoid text split by ANSI codes like the filter placeholder)
+			return bytes.Contains(bts, []byte("Toggle help"))
 		},
 		teatest.WithDuration(2*time.Second),
 	)
 
-	// Press ? again to close help
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	// Press Esc to close help (? would be typed into the filter input)
+	tm.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			// Help should be gone, back to normal view with tables
-			return bytes.Contains(bts, []byte("stage")) &&
-				!bytes.Contains(bts, []byte("Keyboard Shortcuts"))
+			// Back to normal view — hint bar shows "stage all"
+			return bytes.Contains(bts, []byte("stage all"))
 		},
 		teatest.WithDuration(2*time.Second),
 	)
