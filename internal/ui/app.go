@@ -1459,6 +1459,19 @@ func (a *App) loadTableDataPage(table string, offset int) tea.Cmd {
 
 func (a *App) loadCommitDiff(hash string) tea.Cmd {
 	runner := a.runner
+	// Find the commit metadata from our cached list
+	var header string
+	for _, c := range a.commits.Commits {
+		if c.Hash == hash {
+			header = fmt.Sprintf("commit %s\nAuthor: %s <%s>\nDate:   %s\n\n    %s\n",
+				c.Hash,
+				c.Author, c.Email,
+				c.Date.Format("Mon Jan 2 15:04:05 2006"),
+				c.Message,
+			)
+			break
+		}
+	}
 	return func() tea.Msg {
 		// Show diff for this commit vs its parent
 		content, err := runner.Exec("diff", hash+"^", hash)
@@ -1468,6 +1481,9 @@ func (a *App) loadCommitDiff(hash string) tea.Cmd {
 			if err != nil {
 				return ErrorMsg{Err: err}
 			}
+		}
+		if header != "" {
+			content = header + "\n" + content
 		}
 		return DiffContentMsg{Table: hash[:7], Content: content}
 	}
