@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,7 +21,8 @@ type BranchesModel struct {
 	Cursor   int
 	Focused  bool
 	Height   int
-	HScroll  int // horizontal scroll offset (columns)
+	HScroll  int    // horizontal scroll offset (columns)
+	Filter   string // case-insensitive substring filter
 }
 
 // Init is a no-op.
@@ -36,12 +38,20 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			if m.Cursor < len(m.Branches)-1 {
-				m.Cursor++
+			indices := m.filteredIndices()
+			for ci, idx := range indices {
+				if idx == m.Cursor && ci+1 < len(indices) {
+					m.Cursor = indices[ci+1]
+					break
+				}
 			}
 		case "k", "up":
-			if m.Cursor > 0 {
-				m.Cursor--
+			indices := m.filteredIndices()
+			for ci, idx := range indices {
+				if idx == m.Cursor && ci > 0 {
+					m.Cursor = indices[ci-1]
+					break
+				}
 			}
 		case "H":
 			m.HScroll -= HScrollStep
@@ -67,14 +77,28 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 
 // View renders the branches list, clipped to the visible height.
 func (m BranchesModel) View() string {
-	if len(m.Branches) == 0 {
+	indices := m.filteredIndices()
+	if len(indices) == 0 {
+		if m.Filter != "" {
+			return "No matching branches"
+		}
 		return "No branches"
 	}
 
-	start, end := visibleRange(m.Cursor, len(m.Branches), m.Height)
+	// Find cursor position within filtered list
+	cursorPos := 0
+	for i, idx := range indices {
+		if idx == m.Cursor {
+			cursorPos = i
+			break
+		}
+	}
+
+	start, end := visibleRange(cursorPos, len(indices), m.Height)
 
 	var s string
-	for i := start; i < end; i++ {
+	for fi := start; fi < end; fi++ {
+		i := indices[fi]
 		b := m.Branches[i]
 		selected := i == m.Cursor && m.Focused
 
@@ -122,6 +146,27 @@ func (m BranchesModel) SelectedBranch() string {
 		return m.Branches[m.Cursor].Name
 	}
 	return ""
+}
+
+// matchesFilter returns true if a branch matches the current filter.
+func (m BranchesModel) matchesFilter(b domain.Branch) bool {
+	if m.Filter == "" {
+		return true
+	}
+	f := strings.ToLower(m.Filter)
+	return strings.Contains(strings.ToLower(b.Name), f) ||
+		strings.Contains(strings.ToLower(b.LatestMessage), f)
+}
+
+// filteredIndices returns the indices of branches matching the filter.
+func (m BranchesModel) filteredIndices() []int {
+	var indices []int
+	for i, b := range m.Branches {
+		if m.matchesFilter(b) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }
 
 // Message types for parent to handle.

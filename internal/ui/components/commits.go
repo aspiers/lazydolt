@@ -27,7 +27,8 @@ type CommitsModel struct {
 	Cursor  int
 	Focused bool
 	Height  int
-	HScroll int // horizontal scroll offset (columns)
+	HScroll int    // horizontal scroll offset (columns)
+	Filter  string // case-insensitive substring filter
 }
 
 // Init is a no-op.
@@ -43,12 +44,20 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			if m.Cursor < len(m.Commits)-1 {
-				m.Cursor++
+			indices := m.filteredIndices()
+			for ci, idx := range indices {
+				if idx == m.Cursor && ci+1 < len(indices) {
+					m.Cursor = indices[ci+1]
+					break
+				}
 			}
 		case "k", "up":
-			if m.Cursor > 0 {
-				m.Cursor--
+			indices := m.filteredIndices()
+			for ci, idx := range indices {
+				if idx == m.Cursor && ci > 0 {
+					m.Cursor = indices[ci-1]
+					break
+				}
 			}
 		case "H":
 			m.HScroll -= HScrollStep
@@ -68,14 +77,27 @@ func (m CommitsModel) Update(msg tea.Msg) (CommitsModel, tea.Cmd) {
 
 // View renders the commits list, clipped to the visible height.
 func (m CommitsModel) View() string {
-	if len(m.Commits) == 0 {
+	indices := m.filteredIndices()
+	if len(indices) == 0 {
+		if m.Filter != "" {
+			return "No matching commits"
+		}
 		return "No commits"
 	}
 
-	start, end := visibleRange(m.Cursor, len(m.Commits), m.Height)
+	cursorPos := 0
+	for i, idx := range indices {
+		if idx == m.Cursor {
+			cursorPos = i
+			break
+		}
+	}
+
+	start, end := visibleRange(cursorPos, len(indices), m.Height)
 
 	var s string
-	for i := start; i < end; i++ {
+	for fi := start; fi < end; fi++ {
+		i := indices[fi]
 		c := m.Commits[i]
 		selected := i == m.Cursor && m.Focused
 
@@ -122,6 +144,28 @@ func (m CommitsModel) SelectedHash() string {
 		return m.Commits[m.Cursor].Hash
 	}
 	return ""
+}
+
+// matchesFilter returns true if a commit matches the current filter.
+func (m CommitsModel) matchesFilter(c domain.Commit) bool {
+	if m.Filter == "" {
+		return true
+	}
+	f := strings.ToLower(m.Filter)
+	return strings.Contains(strings.ToLower(c.Message), f) ||
+		strings.Contains(strings.ToLower(c.Author), f) ||
+		strings.Contains(strings.ToLower(c.Hash), f)
+}
+
+// filteredIndices returns the indices of commits matching the filter.
+func (m CommitsModel) filteredIndices() []int {
+	var indices []int
+	for i, c := range m.Commits {
+		if m.matchesFilter(c) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }
 
 // Message types for parent to handle.

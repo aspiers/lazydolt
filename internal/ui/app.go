@@ -104,6 +104,10 @@ type App struct {
 	showDiscardConfirm bool
 	discardTable       string
 
+	// Panel filter
+	filterInput  textinput.Model
+	filterActive bool // text input is focused
+
 	// Error flash
 	errMsg string
 
@@ -134,6 +138,11 @@ func NewApp(runner *dolt.Runner) App {
 	bi.Placeholder = "Enter branch name..."
 	bi.CharLimit = 200
 
+	fi := textinput.New()
+	fi.Placeholder = "filter..."
+	fi.CharLimit = 100
+	fi.Prompt = "/ "
+
 	hf := textinput.New()
 	hf.Placeholder = "Type to filter..."
 	hf.CharLimit = 50
@@ -149,6 +158,7 @@ func NewApp(runner *dolt.Runner) App {
 		browserView: components.NewBrowserView(80, 20),
 		commitInput: ti,
 		branchInput: bi,
+		filterInput: fi,
 		helpFilter:  hf,
 		spinner:     s,
 		leftRatio:   30,
@@ -202,6 +212,39 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.showBranch {
 			return a.updateNewBranchDialog(msg)
 		}
+		// Panel filter intercepts all keys when active
+		if a.filterActive {
+			switch msg.String() {
+			case "esc":
+				// Clear filter and exit filter mode
+				a.filterActive = false
+				a.filterInput.Reset()
+				a.filterInput.Blur()
+				a.tables.Filter = ""
+				a.branches.Filter = ""
+				a.commits.Filter = ""
+				return a, nil
+			case "enter":
+				// Confirm filter and return to navigation
+				a.filterActive = false
+				a.filterInput.Blur()
+				return a, nil
+			default:
+				var cmd tea.Cmd
+				a.filterInput, cmd = a.filterInput.Update(msg)
+				// Apply filter text to the focused panel
+				f := a.filterInput.Value()
+				switch a.focused {
+				case components.PanelTables:
+					a.tables.Filter = f
+				case components.PanelBranches:
+					a.branches.Filter = f
+				case components.PanelCommits:
+					a.commits.Filter = f
+				}
+				return a, cmd
+			}
+		}
 		if a.showHelp {
 			if msg.String() == "?" || msg.String() == "esc" {
 				a.showHelp = false
@@ -219,6 +262,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return a, tea.Quit
 		case "esc":
+			// Esc clears active filter first
+			if a.tables.Filter != "" || a.branches.Filter != "" || a.commits.Filter != "" {
+				a.tables.Filter = ""
+				a.branches.Filter = ""
+				a.commits.Filter = ""
+				a.filterInput.Reset()
+				return a, nil
+			}
 			// Esc goes back: zoom → normal, or reset main view to auto-diff
 			if a.screenMode != ScreenNormal {
 				a.screenMode = ScreenNormal
@@ -295,6 +346,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.pullCmd()
 		case "f":
 			return a, a.fetchCmd()
+		case "/":
+			// Only activate filter for left panels (not main)
+			if a.focused != components.PanelMain {
+				a.filterActive = true
+				a.filterInput.Reset()
+				a.filterInput.Focus()
+				return a, textinput.Blink
+			}
 		case "?":
 			a.showHelp = true
 			a.helpFilter.Reset()
@@ -634,8 +693,28 @@ func (a App) View() string {
 		}
 	}
 
-	// Key hints
-	hints := components.RenderKeyHints(a.focused, a.width)
+	// Key hints or filter input
+	var hints string
+	if a.filterActive {
+		hints = a.filterInput.View() + "  " +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] confirm  [Esc] clear")
+	} else {
+		hints = components.RenderKeyHints(a.focused, a.width)
+		// Show active filter indicator
+		activeFilter := ""
+		switch a.focused {
+		case components.PanelTables:
+			activeFilter = a.tables.Filter
+		case components.PanelBranches:
+			activeFilter = a.branches.Filter
+		case components.PanelCommits:
+			activeFilter = a.commits.Filter
+		}
+		if activeFilter != "" {
+			filterIndicator := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render("/" + activeFilter)
+			hints = filterIndicator + "  " + hints
+		}
+	}
 
 	// Error bar
 	if a.errMsg != "" {
@@ -941,6 +1020,13 @@ func (a *App) cycleFocusReverse() {
 }
 
 func (a *App) setFocus(p components.Panel) {
+	// Clear filter when switching panels
+	a.filterActive = false
+	a.filterInput.Reset()
+	a.filterInput.Blur()
+	a.tables.Filter = ""
+	a.branches.Filter = ""
+	a.commits.Filter = ""
 	a.focused = p
 	a.syncFocus()
 }
@@ -1695,7 +1781,8 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "P", "Push to remote"},
 	{"Global", "p", "Pull from remote"},
 	{"Global", "f", "Fetch from remote"},
-	{"Global", "Esc", "Back / reset zoom"},
+	{"Global", "/", "Filter panel items"},
+	{"Global", "Esc", "Back / reset zoom / clear filter"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},

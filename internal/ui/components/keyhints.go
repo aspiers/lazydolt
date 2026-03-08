@@ -38,6 +38,7 @@ func hintsForPanel(panel Panel) []KeyHint {
 		{Key: "+/_", Desc: "zoom"},
 		{Key: "</>/=", Desc: "width"},
 		{Key: "H/L", Desc: "scroll"},
+		{Key: "/", Desc: "filter"},
 		{Key: "Esc", Desc: "back"},
 		{Key: "c", Desc: "commit"},
 		{Key: "P/p/f", Desc: "push/pull/fetch"},

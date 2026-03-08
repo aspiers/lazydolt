@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -43,6 +44,7 @@ type TablesModel struct {
 	Height    int
 	HScroll   int // horizontal scroll offset (columns)
 	Collapsed map[section]bool
+	Filter    string // case-insensitive substring filter
 }
 
 // Init is a no-op.
@@ -206,38 +208,42 @@ func (m TablesModel) groupTables() (unstaged, staged, clean []domain.Table) {
 }
 
 // displayItems builds the flat display list of headers and table entries,
-// respecting collapsed sections. Only sections with items are shown.
+// respecting collapsed sections and the active filter. Only sections with
+// items are shown.
 func (m TablesModel) displayItems() []displayItem {
 	unstaged, staged, clean := m.groupTables()
 
 	var items []displayItem
+	filter := strings.ToLower(m.Filter)
 
-	if len(unstaged) > 0 {
-		items = append(items, displayItem{isHeader: true, section: sectionUnstaged})
-		if !m.Collapsed[sectionUnstaged] {
-			for i := range unstaged {
-				items = append(items, displayItem{table: &unstaged[i]})
+	matchesFilter := func(t *domain.Table) bool {
+		if filter == "" {
+			return true
+		}
+		return strings.Contains(strings.ToLower(t.Name), filter)
+	}
+
+	addSection := func(sec section, tables []domain.Table) {
+		var matching []domain.Table
+		for i := range tables {
+			if matchesFilter(&tables[i]) {
+				matching = append(matching, tables[i])
+			}
+		}
+		if len(matching) == 0 {
+			return
+		}
+		items = append(items, displayItem{isHeader: true, section: sec})
+		if !m.Collapsed[sec] {
+			for i := range matching {
+				items = append(items, displayItem{table: &matching[i]})
 			}
 		}
 	}
 
-	if len(staged) > 0 {
-		items = append(items, displayItem{isHeader: true, section: sectionStaged})
-		if !m.Collapsed[sectionStaged] {
-			for i := range staged {
-				items = append(items, displayItem{table: &staged[i]})
-			}
-		}
-	}
-
-	if len(clean) > 0 {
-		items = append(items, displayItem{isHeader: true, section: sectionClean})
-		if !m.Collapsed[sectionClean] {
-			for i := range clean {
-				items = append(items, displayItem{table: &clean[i]})
-			}
-		}
-	}
+	addSection(sectionUnstaged, unstaged)
+	addSection(sectionStaged, staged)
+	addSection(sectionClean, clean)
 
 	return items
 }
