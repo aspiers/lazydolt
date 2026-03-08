@@ -38,6 +38,7 @@ type BrowserView struct {
 func NewBrowserView(width, height int) BrowserView {
 	vp := viewport.New(width, height)
 	vp.SetContent("Select a table and press Enter to browse data")
+	vp.SetHorizontalStep(4)
 	return BrowserView{
 		Viewport: vp,
 		PageSize: 100,

@@ -24,6 +24,7 @@ const (
 	PanelTables Panel = iota
 	PanelBranches
 	PanelCommits
+	PanelMain // right-hand panel (diff/schema/browser)
 )
 
 // RenderKeyHints renders the hint bar for the given panel and width.
@@ -58,6 +59,11 @@ func hintsForPanel(panel Panel) []KeyHint {
 	case PanelCommits:
 		return append([]KeyHint{
 			{Key: "Enter", Desc: "details"},
+		}, global...)
+	case PanelMain:
+		return append([]KeyHint{
+			{Key: "j/k", Desc: "scroll"},
+			{Key: "PgUp/Dn", Desc: "page"},
 		}, global...)
 	default:
 		return global

@@ -27,6 +27,7 @@ type DiffView struct {
 func NewDiffView(width, height int) DiffView {
 	vp := viewport.New(width, height)
 	vp.SetContent("No changes to display")
+	vp.SetHorizontalStep(4)
 	return DiffView{
 		Viewport: vp,
 		Ready:    true,

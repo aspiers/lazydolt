@@ -30,6 +30,7 @@ type SchemaView struct {
 func NewSchemaView(width, height int) SchemaView {
 	vp := viewport.New(width, height)
 	vp.SetContent("Select a table and press 's' to view schema")
+	vp.SetHorizontalStep(4)
 	return SchemaView{
 		Viewport: vp,
 		Ready:    true,

@@ -28,7 +28,6 @@ var (
 	inactiveTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim
 	tabSepStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))            // dim separator
 
-	mainBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 )
 
 // MainView tracks which content is shown in the right panel.
@@ -165,13 +164,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "tab":
 			a.cycleFocus()
-			if a.focused != components.PanelTables {
+			if a.focused != components.PanelTables && a.focused != components.PanelMain {
 				a.mainView = MainViewDiff
 			}
 			return a, a.autoPreview()
 		case "shift+tab":
 			a.cycleFocusReverse()
-			if a.focused != components.PanelTables {
+			if a.focused != components.PanelTables && a.focused != components.PanelMain {
 				a.mainView = MainViewDiff
 			}
 			return a, a.autoPreview()
@@ -229,6 +228,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
+		case components.PanelMain:
+			// Forward key events to the active right-panel viewport.
+			switch a.mainView {
+			case MainViewDiff:
+				var cmd tea.Cmd
+				a.diffView, cmd = a.diffView.Update(msg)
+				cmds = append(cmds, cmd)
+			case MainViewSchema:
+				var cmd tea.Cmd
+				a.schemaView, cmd = a.schemaView.Update(msg)
+				cmds = append(cmds, cmd)
+			case MainViewBrowser:
+				var cmd tea.Cmd
+				a.browserView, cmd = a.browserView.Update(msg)
+				cmds = append(cmds, cmd)
+			}
 		}
 		if a.focusedCursor() != prevCursor {
 			cmds = append(cmds, a.autoPreview())
@@ -300,9 +315,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadTableDataPage(msg.Table, msg.Offset))
 	}
 
-	// Update main panel viewport, but don't forward key events that
-	// were already handled by a focused left panel — otherwise j/k
-	// scrolls both the panel list and the viewport simultaneously.
+	// Forward non-key messages (e.g. mouse, resize) to the active viewport
+	// regardless of focus. Key events reach the viewport only when PanelMain
+	// is focused (handled in the key-routing switch above).
 	if _, isKey := msg.(tea.KeyMsg); !isKey {
 		switch a.mainView {
 		case MainViewDiff:
@@ -363,10 +378,15 @@ func (a App) View() string {
 
 		mainTitle := a.mainPanelTitle()
 		mainContent := a.mainPanelContent()
-		mainRendered := blurredBorder.Width(mainInnerW).Height(botInnerH).Render(mainContent)
+		mainFocused := a.focused == components.PanelMain
+		mainStyle := blurredBorder
+		if mainFocused {
+			mainStyle = focusedBorder
+		}
+		mainRendered := mainStyle.Width(mainInnerW).Height(botInnerH).Render(mainContent)
 		mainLines := strings.Split(mainRendered, "\n")
 		if len(mainLines) > 0 {
-			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
+			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, mainFocused)
 		}
 		mainBox := strings.Join(mainLines, "\n")
 
@@ -452,11 +472,16 @@ func (a App) View() string {
 
 			mainTitle := a.mainPanelTitle()
 			mainContent := a.mainPanelContent()
-			mainRendered := mainBorder.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+			mainFocused := a.focused == components.PanelMain
+			mainStyle := blurredBorder
+			if mainFocused {
+				mainStyle = focusedBorder
+			}
+			mainRendered := mainStyle.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
 			// Embed title in the top border
 			mainLines := strings.Split(mainRendered, "\n")
 			if len(mainLines) > 0 {
-				mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, false)
+				mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, mainFocused)
 			}
 			mainBox := strings.Join(mainLines, "\n")
 			body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
@@ -730,6 +755,8 @@ func (a *App) cycleFocus() {
 	case components.PanelBranches:
 		a.focused = components.PanelCommits
 	case components.PanelCommits:
+		a.focused = components.PanelMain
+	case components.PanelMain:
 		a.focused = components.PanelTables
 	}
 	a.syncFocus()
@@ -738,11 +765,13 @@ func (a *App) cycleFocus() {
 func (a *App) cycleFocusReverse() {
 	switch a.focused {
 	case components.PanelTables:
-		a.focused = components.PanelCommits
+		a.focused = components.PanelMain
 	case components.PanelBranches:
 		a.focused = components.PanelTables
 	case components.PanelCommits:
 		a.focused = components.PanelBranches
+	case components.PanelMain:
+		a.focused = components.PanelCommits
 	}
 	a.syncFocus()
 }
@@ -1105,8 +1134,8 @@ func (a App) renderHelp() string {
 
   Global
     q / Ctrl+C    Quit
-    Tab / S-Tab   Next / previous panel
-    1-3           Jump to panel
+    Tab / S-Tab   Next / previous panel (1-2-3-main)
+    1-3           Jump to left panel
     c             Commit
     + / _         Zoom panel
     Esc           Back / reset zoom
@@ -1130,9 +1159,11 @@ func (a App) renderHelp() string {
     j/k           Navigate
     Enter         View commit details
 
-  Diff/Schema Viewer
-    j/k           Scroll
+  Main Panel (Tab to focus)
+    j/k           Scroll up/down
     PgUp/PgDn     Page up/down
+    u/d           Half page up/down
+    H/L           Scroll left/right
 
 Press ? or Esc to close`
 
