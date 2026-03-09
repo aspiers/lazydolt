@@ -237,11 +237,12 @@ func authorColorStyle(name string) lipgloss.Style {
 }
 
 // initials extracts uppercase initials from a name, e.g.
-// "Adam Spiers" → "AS", "alice" → "A".
+// "Adam Spiers" → "AS", "alice" → "A ". The result is always
+// padded to exactly 2 characters so columns stay aligned.
 func initials(name string) string {
 	parts := strings.Fields(name)
 	if len(parts) == 0 {
-		return "?"
+		return "? "
 	}
 	var b strings.Builder
 	for _, p := range parts {
@@ -252,7 +253,14 @@ func initials(name string) string {
 	}
 	result := strings.ToUpper(b.String())
 	if result == "" {
-		return "?"
+		return "? "
+	}
+	// Pad to 2 characters for consistent column alignment.
+	// Truncate if more than 2 (e.g. 3-word names).
+	if len(result) < 2 {
+		result += strings.Repeat(" ", 2-len(result))
+	} else if len(result) > 2 {
+		result = result[:2]
 	}
 	return result
 }

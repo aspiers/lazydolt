@@ -109,3 +109,27 @@ func TestCommitsModel_ViewEmptyList(t *testing.T) {
 	m := newCommitsModel(nil, 0, true)
 	golden.RequireEqual(t, m.View())
 }
+
+func TestInitials(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"Adam Spiers", "AS"},
+		{"alice", "A "},
+		{"Bob", "B "},
+		{"Charlie Brown Jr", "CB"},
+		{"", "? "},
+		{"  ", "? "},
+		{"A B", "AB"},
+	}
+	for _, tt := range tests {
+		got := initials(tt.name)
+		if got != tt.want {
+			t.Errorf("initials(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+		if len(got) != 2 {
+			t.Errorf("initials(%q) length = %d, want 2", tt.name, len(got))
+		}
+	}
+}
