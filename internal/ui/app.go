@@ -634,6 +634,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, textinput.Blink
 				}
 			}
+			if msg.String() == "l" {
+				a.blameMode = true // reuse blameMode to prevent diff override
+				cmds = append(cmds, a.loadReflog())
+				return a, tea.Batch(cmds...)
+			}
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
@@ -702,6 +707,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BlameContentMsg:
 		a.diffView.SetContent("Blame: "+msg.Table, msg.Content)
+		a.mainView = MainViewDiff
+
+	case ReflogContentMsg:
+		a.diffView.SetContent("Reflog", msg.Content)
 		a.mainView = MainViewDiff
 
 	case RefreshMsg:
@@ -1812,6 +1821,17 @@ func (a *App) loadSchema(table string) tea.Cmd {
 			return ErrorMsg{Err: err}
 		}
 		return SchemaContentMsg{Table: table, Schema: schema.CreateStatement}
+	}
+}
+
+func (a *App) loadReflog() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		output, err := runner.Reflog()
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return ReflogContentMsg{Content: output}
 	}
 }
 
@@ -3158,6 +3178,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "C", "Cherry-pick commit"},
 	{"Commits Panel", "t", "Revert commit"},
 	{"Commits Panel", "T", "Create tag at commit"},
+	{"Commits Panel", "l", "View reflog"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},

@@ -109,6 +109,11 @@ type BlameContentMsg struct {
 	Content string
 }
 
+// ReflogContentMsg carries reflog text to the main panel.
+type ReflogContentMsg struct {
+	Content string
+}
+
 // CommitDetailMsg carries the diff stat for a commit's changed tables.
 type CommitDetailMsg struct {
 	Hash   string
