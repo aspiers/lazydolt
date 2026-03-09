@@ -150,6 +150,48 @@ func (m CommitsModel) View() string {
 	return HScrollContent(s, m.HScroll)
 }
 
+// MoveUp moves the cursor up by one item in the filtered list.
+func (m *CommitsModel) MoveUp() {
+	indices := m.filteredIndices()
+	for ci, idx := range indices {
+		if idx == m.Cursor && ci > 0 {
+			m.Cursor = indices[ci-1]
+			return
+		}
+	}
+}
+
+// MoveDown moves the cursor down by one item in the filtered list.
+func (m *CommitsModel) MoveDown() {
+	indices := m.filteredIndices()
+	for ci, idx := range indices {
+		if idx == m.Cursor && ci+1 < len(indices) {
+			m.Cursor = indices[ci+1]
+			return
+		}
+	}
+}
+
+// ClickRow sets the cursor to the item at the given visible row offset.
+func (m *CommitsModel) ClickRow(row int) {
+	indices := m.filteredIndices()
+	if len(indices) == 0 {
+		return
+	}
+	cursorPos := 0
+	for ci, idx := range indices {
+		if idx == m.Cursor {
+			cursorPos = ci
+			break
+		}
+	}
+	start, _ := visibleRange(cursorPos, len(indices), m.Height)
+	idx := start + row
+	if idx >= 0 && idx < len(indices) {
+		m.Cursor = indices[idx]
+	}
+}
+
 // SelectedHash returns the hash of the currently selected commit, or empty string.
 func (m CommitsModel) SelectedHash() string {
 	if m.Cursor >= 0 && m.Cursor < len(m.Commits) {

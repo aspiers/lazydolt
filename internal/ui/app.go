@@ -285,6 +285,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Viewport sizes will be recalculated in View()
 		return a, nil
 
+	case tea.MouseMsg:
+		return a.handleMouse(msg)
+
 	case tea.KeyMsg:
 		// Delete branch confirmation intercepts all keys when active
 		if a.showDeleteBranchConfirm {
@@ -1057,10 +1060,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadTableDataPage(msg.Table, msg.Offset))
 	}
 
-	// Forward non-key messages (e.g. mouse, resize) to the active viewport
-	// regardless of focus. Key events reach the viewport only when PanelMain
-	// is focused (handled in the key-routing switch above).
-	if _, isKey := msg.(tea.KeyMsg); !isKey {
+	// Forward non-key, non-mouse messages (e.g. resize) to the active
+	// viewport. Key events reach the viewport only when PanelMain is focused
+	// (handled in the key-routing switch above). Mouse events are handled
+	// in handleMouse() with coordinate-based routing.
+	switch msg.(type) {
+	case tea.KeyMsg, tea.MouseMsg:
+		// Already handled above
+	default:
 		switch a.mainView {
 		case MainViewDiff:
 			var cmd tea.Cmd
@@ -3984,6 +3991,226 @@ func (a App) renderCommitDetailTables(height int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// --- Mouse handling ---
+
+// handleMouse processes mouse events for click-to-focus, item selection,
+// and scroll wheel support.
+func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Ignore motion-only events (no button pressed)
+	if msg.Action == tea.MouseActionMotion {
+		return a, nil
+	}
+
+	// Only process presses (including wheel events)
+	if msg.Action != tea.MouseActionPress {
+		return a, nil
+	}
+
+	// Determine which panel the mouse is in and handle accordingly
+	panel, innerRow := a.mousePanelHit(msg.X, msg.Y)
+	if panel < 0 {
+		return a, nil
+	}
+
+	// Wheel events: scroll the targeted panel
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		return a.handleMouseWheel(panel, msg)
+	}
+
+	// Left click: focus panel and optionally select item
+	if msg.Button == tea.MouseButtonLeft {
+		return a.handleMouseClick(panel, innerRow)
+	}
+
+	return a, nil
+}
+
+// mousePanelHit determines which panel a mouse coordinate hits.
+// Returns the panel and the row offset within the panel's inner content area.
+// Returns panel=-1 if the click is not in any panel.
+func (a App) mousePanelHit(x, y int) (panel components.Panel, innerRow int) {
+	if a.screenMode == ScreenHalf {
+		return a.mousePanelHitHalf(x, y)
+	}
+	if a.screenMode == ScreenFullscreen {
+		return a.mousePanelHitFullscreen(x, y)
+	}
+	return a.mousePanelHitNormal(x, y)
+}
+
+// mousePanelHitNormal handles the default two-column layout.
+func (a App) mousePanelHitNormal(x, y int) (components.Panel, int) {
+	leftW := a.leftColumnWidth()
+	const borderH = 2
+
+	statusInnerH := a.statusBar.Lines()
+
+	// Compute panel heights (same logic as View)
+	availForPanels := a.height - 1 - (statusInnerH + borderH) - 3*borderH
+	var tablesH, branchesH, commitsH int
+	if a.focused == components.PanelMain {
+		each := availForPanels / 3
+		remainder := availForPanels - 3*each
+		tablesH = each + remainder
+		branchesH = each
+		commitsH = each
+	} else {
+		focusedH, unfocusedH := a.panelHeights(availForPanels)
+		heightFor := func(p components.Panel) int {
+			if p == a.focused {
+				return focusedH
+			}
+			return unfocusedH
+		}
+		tablesH = heightFor(components.PanelTables)
+		branchesH = heightFor(components.PanelBranches)
+		commitsH = heightFor(components.PanelCommits)
+	}
+
+	if x < leftW {
+		// Left column: status, tables, branches, commits stacked vertically
+		statusEnd := statusInnerH + borderH // outer height of status box
+		tablesEnd := statusEnd + tablesH + borderH
+		branchesEnd := tablesEnd + branchesH + borderH
+		commitsEnd := branchesEnd + commitsH + borderH
+		_ = commitsEnd
+
+		switch {
+		case y < statusEnd:
+			return -1, 0 // Status box, not a focusable panel
+		case y < tablesEnd:
+			return components.PanelTables, y - statusEnd - 1 // -1 for top border
+		case y < branchesEnd:
+			return components.PanelBranches, y - tablesEnd - 1
+		case y < commitsEnd:
+			return components.PanelCommits, y - branchesEnd - 1
+		default:
+			return -1, 0 // hints bar or beyond
+		}
+	}
+
+	// Right column
+	return components.PanelMain, y - 1 // -1 for top border
+}
+
+// mousePanelHitHalf handles the ScreenHalf vertical split layout.
+func (a App) mousePanelHitHalf(x, y int) (components.Panel, int) {
+	topH := (a.height - 1) / 3 // same as View() calculation
+	if y < topH {
+		return a.focused, y - 1
+	}
+	return components.PanelMain, y - topH - 1
+}
+
+// mousePanelHitFullscreen handles the ScreenFullscreen layout.
+func (a App) mousePanelHitFullscreen(x, y int) (components.Panel, int) {
+	// In fullscreen, only left panels are visible
+	return a.focused, y - 1
+}
+
+// handleMouseWheel handles scroll wheel events on a given panel.
+func (a App) handleMouseWheel(panel components.Panel, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	delta := 3 // lines per wheel tick
+	if msg.Button == tea.MouseButtonWheelUp {
+		delta = -delta
+	}
+
+	switch panel {
+	case components.PanelTables:
+		for range abs(delta) {
+			if delta < 0 {
+				a.tables.MoveUp()
+			} else {
+				a.tables.MoveDown()
+			}
+		}
+		a.schemaDiff = false
+		a.diffStat = false
+		a.blameMode = false
+		return a, a.autoPreview()
+
+	case components.PanelBranches:
+		for range abs(delta) {
+			if delta < 0 {
+				a.branches.MoveUp()
+			} else {
+				a.branches.MoveDown()
+			}
+		}
+		return a, nil
+
+	case components.PanelCommits:
+		for range abs(delta) {
+			if delta < 0 {
+				a.commits.MoveUp()
+			} else {
+				a.commits.MoveDown()
+			}
+		}
+		a.schemaDiff = false
+		a.diffStat = false
+		return a, a.autoPreview()
+
+	case components.PanelMain:
+		// Forward to the active viewport
+		var cmd tea.Cmd
+		switch a.mainView {
+		case MainViewDiff:
+			a.diffView, cmd = a.diffView.Update(msg)
+		case MainViewSchema:
+			a.schemaView, cmd = a.schemaView.Update(msg)
+		case MainViewBrowser:
+			a.browserView, cmd = a.browserView.Update(msg)
+		}
+		return a, cmd
+	}
+	return a, nil
+}
+
+// handleMouseClick handles left-click for focus and item selection.
+func (a App) handleMouseClick(panel components.Panel, innerRow int) (tea.Model, tea.Cmd) {
+	// Focus the clicked panel
+	prevFocused := a.focused
+	a.setFocus(panel)
+
+	var cmd tea.Cmd
+	switch panel {
+	case components.PanelTables:
+		if innerRow >= 0 {
+			a.tables.ClickRow(innerRow)
+		}
+		if prevFocused != panel {
+			a.schemaDiff = false
+			a.diffStat = false
+			a.blameMode = false
+			cmd = a.autoPreview()
+		}
+	case components.PanelBranches:
+		if innerRow >= 0 {
+			a.branches.ClickRow(innerRow)
+		}
+	case components.PanelCommits:
+		if innerRow >= 0 {
+			a.commits.ClickRow(innerRow)
+		}
+		if prevFocused != panel {
+			a.schemaDiff = false
+			a.diffStat = false
+			cmd = a.autoPreview()
+		}
+	case components.PanelMain:
+		// Click on main panel just focuses it
+	}
+	return a, cmd
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // --- Help ---

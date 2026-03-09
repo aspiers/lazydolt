@@ -259,6 +259,64 @@ func (m BranchesModel) renderRemote(r domain.Remote, selected bool) string {
 	return line + "\n"
 }
 
+// MoveUp moves the cursor up by one item in the filtered list.
+func (m *BranchesModel) MoveUp() {
+	indices := m.filteredIndices()
+	for ci, idx := range indices {
+		if idx == m.Cursor && ci > 0 {
+			m.Cursor = indices[ci-1]
+			return
+		}
+	}
+}
+
+// MoveDown moves the cursor down by one item in the filtered list.
+func (m *BranchesModel) MoveDown() {
+	indices := m.filteredIndices()
+	for ci, idx := range indices {
+		if idx == m.Cursor && ci+1 < len(indices) {
+			m.Cursor = indices[ci+1]
+			return
+		}
+	}
+}
+
+// ClickRow sets the cursor to the item at the given visible row offset.
+// Accounts for section headers (Tags, Remotes) in the visible output.
+func (m *BranchesModel) ClickRow(row int) {
+	indices := m.filteredIndices()
+	if len(indices) == 0 {
+		return
+	}
+	// Find current cursor position in filtered list
+	cursorPos := 0
+	for ci, idx := range indices {
+		if idx == m.Cursor {
+			cursorPos = ci
+			break
+		}
+	}
+	// Account for section headers reducing available height
+	height := m.Height
+	if len(m.Tags) > 0 {
+		height--
+	}
+	if len(m.Remotes) > 0 {
+		height--
+	}
+	start, _ := visibleRange(cursorPos, len(indices), height)
+
+	// Map visual row to filtered index, skipping section header rows
+	visualRow := 0
+	for fi := start; fi < len(indices); fi++ {
+		if visualRow == row {
+			m.Cursor = indices[fi]
+			return
+		}
+		visualRow++
+	}
+}
+
 // SelectedBranch returns the name of the currently selected branch,
 // or "" if a tag or remote is selected.
 func (m BranchesModel) SelectedBranch() string {

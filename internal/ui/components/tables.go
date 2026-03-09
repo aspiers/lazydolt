@@ -361,6 +361,34 @@ func (m TablesModel) DisplayLen() int {
 	return len(m.displayItems())
 }
 
+// MoveUp moves the cursor up by one item.
+func (m *TablesModel) MoveUp() {
+	if m.Cursor > 0 {
+		m.Cursor--
+	}
+}
+
+// MoveDown moves the cursor down by one item.
+func (m *TablesModel) MoveDown() {
+	items := m.displayItems()
+	if m.Cursor < len(items)-1 {
+		m.Cursor++
+	}
+}
+
+// ClickRow sets the cursor to the item at the given visible row offset.
+func (m *TablesModel) ClickRow(row int) {
+	items := m.displayItems()
+	if len(items) == 0 {
+		return
+	}
+	start, _ := visibleRange(m.Cursor, len(items), m.Height)
+	idx := start + row
+	if idx >= 0 && idx < len(items) {
+		m.Cursor = idx
+	}
+}
+
 // Message types for parent to handle.
 type StageTableMsg struct{ Table string }
 type UnstageTableMsg struct{ Table string }
