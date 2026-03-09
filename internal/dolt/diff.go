@@ -56,6 +56,22 @@ func (r *Runner) DiffSchemaRefs(fromRef, toRef, table string) (string, error) {
 	return out, nil
 }
 
+// DiffRefs returns the text diff between two refs (branches, commits, etc.).
+// If table is empty, diffs all tables.
+func (r *Runner) DiffRefs(fromRef, toRef, table string) (string, error) {
+	args := []string{"diff", fromRef, toRef}
+	if table != "" {
+		args = append(args, table)
+	}
+
+	out, err := r.Exec(args...)
+	if err != nil {
+		return "", err
+	}
+
+	return out, nil
+}
+
 // DiffStat returns diff statistics for a table.
 // If table is empty, returns stats for all changed tables.
 // If staged is true, shows stats for staged changes.

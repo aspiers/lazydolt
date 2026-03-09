@@ -680,6 +680,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 			}
+			if msg.String() == "W" {
+				if b := a.branches.SelectedBranch(); b != "" && b != a.currentBranch {
+					return a, a.loadBranchDiff(b)
+				}
+			}
 			var cmd tea.Cmd
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
@@ -1945,6 +1950,33 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 		}
 		if schemaOnly && strings.TrimSpace(content) == "" {
 			content = "No schema changes"
+		}
+		return DiffContentMsg{Table: label, Content: content}
+	}
+}
+
+// loadBranchDiff loads the diff between the current branch and the given branch.
+func (a *App) loadBranchDiff(branch string) tea.Cmd {
+	runner := a.runner
+	current := a.currentBranch
+	schemaOnly := a.schemaDiff
+	return func() tea.Msg {
+		var content string
+		var err error
+		if schemaOnly {
+			content, err = runner.DiffSchemaRefs(current, branch, "")
+		} else {
+			content, err = runner.DiffRefs(current, branch, "")
+		}
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "No differences"
+		}
+		label := current + ".." + branch
+		if schemaOnly {
+			label += " (schema)"
 		}
 		return DiffContentMsg{Table: label, Content: content}
 	}
@@ -3889,6 +3921,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "j/k", "Navigate"},
 	{"Branches Panel", "Enter", "View branch commits"},
 	{"Branches Panel", "Space", "Checkout branch"},
+	{"Branches Panel", "W", "Diff against current branch"},
 	{"Branches Panel", "m", "Merge into current"},
 	{"Branches Panel", "e", "Rebase onto branch"},
 	{"Branches Panel", "n", "New branch"},
