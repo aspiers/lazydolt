@@ -39,12 +39,11 @@ const (
 	MainViewDiff    MainView = iota // "Status" tab — shows diff
 	MainViewBrowser                 // "Browse" tab — shows table data
 	MainViewSchema                  // "Schema" tab — shows DDL
-	MainViewLog                     // "Log" tab — shows command log
 	mainViewCount                   // sentinel for wrapping
 )
 
 // mainViewTabNames returns the display names for the right panel tabs.
-var mainViewTabNames = [mainViewCount]string{"Status", "Browse", "Schema", "Log"}
+var mainViewTabNames = [mainViewCount]string{"Status", "Browse", "Schema"}
 
 // ScreenMode controls the column split ratio (like lazygit's +/_ cycling).
 type ScreenMode int
@@ -549,10 +548,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				a.browserView, cmd = a.browserView.Update(msg)
 				cmds = append(cmds, cmd)
-			case MainViewLog:
-				var cmd tea.Cmd
-				a.logView, cmd = a.logView.Update(msg)
-				cmds = append(cmds, cmd)
 			}
 		}
 		if a.focusedCursor() != prevCursor {
@@ -712,10 +707,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.browserView, cmd = a.browserView.Update(msg)
 			cmds = append(cmds, cmd)
-		case MainViewLog:
-			var cmd tea.Cmd
-			a.logView, cmd = a.logView.Update(msg)
-			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -761,10 +752,17 @@ func (a App) View() string {
 		topBox := a.renderFocusedPanel(a.width, topInnerH)
 
 		mainInnerW := a.width - 2
-		a.diffView.SetSize(mainInnerW, botInnerH-1)
-		a.schemaView.SetSize(mainInnerW, botInnerH-1)
-		a.browserView.SetSize(mainInnerW, botInnerH-1)
-		a.logView.SetSize(mainInnerW, botInnerH-1)
+
+		// Split bottom area: main panel + command log pane
+		const logPaneInnerHHalf = 4
+		mainContentH := botInnerH - logPaneInnerHHalf - borderH
+		if mainContentH < 3 {
+			mainContentH = 3
+		}
+
+		a.diffView.SetSize(mainInnerW, mainContentH-1)
+		a.schemaView.SetSize(mainInnerW, mainContentH-1)
+		a.browserView.SetSize(mainInnerW, mainContentH-1)
 
 		mainTitle := a.mainPanelTitle()
 		mainContent := a.mainPanelContent()
@@ -773,14 +771,26 @@ func (a App) View() string {
 		if mainFocused {
 			mainStyle = focusedBorder
 		}
-		mainRendered := mainStyle.Width(mainInnerW).Height(botInnerH).Render(mainContent)
+		mainRendered := mainStyle.Width(mainInnerW).Height(mainContentH).Render(mainContent)
 		mainLines := strings.Split(mainRendered, "\n")
 		if len(mainLines) > 0 {
 			mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, mainFocused)
 		}
 		mainBox := strings.Join(mainLines, "\n")
 
-		body = topBox + "\n" + mainBox
+		// Command log pane
+		a.logView.Entries = a.runner.CommandLog()
+		a.logView.RefreshContent()
+		a.logView.SetSize(mainInnerW, logPaneInnerHHalf)
+		logTitle := fmt.Sprintf("Command Log (%d)", len(a.logView.Entries))
+		logRendered := blurredBorder.Width(mainInnerW).Height(logPaneInnerHHalf).Render(a.logView.View())
+		logLines := strings.Split(logRendered, "\n")
+		if len(logLines) > 0 {
+			logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, false)
+		}
+		logBox := strings.Join(logLines, "\n")
+
+		body = topBox + "\n" + mainBox + "\n" + logBox
 	} else {
 		leftW := a.leftColumnWidth()
 
@@ -875,10 +885,17 @@ func (a App) View() string {
 			// Normal: side-by-side columns.
 			// Both borders (left + right) add 2 chars.
 			mainInnerW := a.width - leftW - 2
-			a.diffView.SetSize(mainInnerW, mainInnerH-1)
-			a.schemaView.SetSize(mainInnerW, mainInnerH-1)
-			a.browserView.SetSize(mainInnerW, mainInnerH-1)
-			a.logView.SetSize(mainInnerW, mainInnerH-1)
+
+			// Split right column: main panel + command log pane
+			const logPaneInnerH = 5 // inner height of command log pane
+			mainContentH := mainInnerH - logPaneInnerH - borderH
+			if mainContentH < 4 {
+				mainContentH = 4
+			}
+
+			a.diffView.SetSize(mainInnerW, mainContentH-1)
+			a.schemaView.SetSize(mainInnerW, mainContentH-1)
+			a.browserView.SetSize(mainInnerW, mainContentH-1)
 
 			mainTitle := a.mainPanelTitle()
 			mainContent := a.mainPanelContent()
@@ -887,14 +904,28 @@ func (a App) View() string {
 			if mainFocused {
 				mainStyle = focusedBorder
 			}
-			mainRendered := mainStyle.Width(mainInnerW).Height(mainInnerH).Render(mainContent)
+			mainRendered := mainStyle.Width(mainInnerW).Height(mainContentH).Render(mainContent)
 			// Embed title in the top border
 			mainLines := strings.Split(mainRendered, "\n")
 			if len(mainLines) > 0 {
 				mainLines[0] = buildTitleBorder(mainTitle, mainInnerW+2, mainFocused)
 			}
 			mainBox := strings.Join(mainLines, "\n")
-			body = lipgloss.JoinHorizontal(lipgloss.Top, left, mainBox)
+
+			// Command log pane — always visible below main panel
+			a.logView.Entries = a.runner.CommandLog()
+			a.logView.RefreshContent()
+			a.logView.SetSize(mainInnerW, logPaneInnerH)
+			logTitle := fmt.Sprintf("Command Log (%d)", len(a.logView.Entries))
+			logRendered := blurredBorder.Width(mainInnerW).Height(logPaneInnerH).Render(a.logView.View())
+			logLines := strings.Split(logRendered, "\n")
+			if len(logLines) > 0 {
+				logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, false)
+			}
+			logBox := strings.Join(logLines, "\n")
+
+			rightColumn := lipgloss.JoinVertical(lipgloss.Left, mainBox, logBox)
+			body = lipgloss.JoinHorizontal(lipgloss.Top, left, rightColumn)
 		}
 	}
 
@@ -1201,8 +1232,6 @@ func (a App) mainPanelTitle() string {
 			return "Browse: " + a.browserView.Table
 		}
 		return "Table Browser"
-	case MainViewLog:
-		return fmt.Sprintf("Command Log (%d)", len(a.runner.CommandLog()))
 	}
 	return ""
 }
@@ -1215,11 +1244,6 @@ func (a App) mainPanelContent() string {
 		return a.schemaView.View()
 	case MainViewBrowser:
 		return a.browserView.View()
-	case MainViewLog:
-		// Refresh log entries from runner before rendering
-		a.logView.Entries = a.runner.CommandLog()
-		a.logView.RefreshContent()
-		return a.logView.View()
 	}
 	return ""
 }
