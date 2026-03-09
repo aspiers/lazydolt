@@ -262,10 +262,14 @@ type App struct {
 	showFilterInput    bool // text input for filter value
 	filterType         int  // 0=author, 1=message
 
-	// Config viewer
-	showConfig     bool
-	configViewport viewport.Model
-	configContent  string
+	// Config viewer/editor
+	showConfig      bool
+	configGlobal    []dolt.ConfigEntry
+	configLocal     []dolt.ConfigEntry
+	configCursor    int  // cursor into flattened list
+	showConfigEdit  bool // editing a config value
+	configEditScope bool // true=global, false=local
+	configEditKey   string
 
 	// Database export
 	showExportMenu   bool
@@ -446,6 +450,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
 			return a.updateSQLDialog(msg)
+		}
+		// Config edit dialog intercepts all keys when active
+		if a.showConfigEdit {
+			return a.updateConfigEdit(msg)
 		}
 		// Config viewer intercepts all keys when active
 		if a.showConfig {
@@ -1065,10 +1073,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DumpSuccessMsg:
 		cmds = append(cmds, a.setFlashSuccess("Exported database to "+msg.Path))
 
+	case ConfigSetSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess(fmt.Sprintf("Set %s = %s", msg.Key, msg.Value)))
+		// Reload config to reflect the change
+		cmds = append(cmds, a.loadConfig())
+
 	case ConfigLoadedMsg:
-		a.configContent = formatConfigContent(msg.Global, msg.Local)
-		a.configViewport = viewport.New(60, 20)
-		a.configViewport.SetContent(a.configContent)
+		a.configGlobal = msg.Global
+		a.configLocal = msg.Local
+		a.configCursor = 0
 		a.showConfig = true
 
 	case StashListMsg:
@@ -1557,6 +1570,9 @@ func (a App) View() string {
 	}
 	if a.showConfig {
 		result = a.overlayConfigViewer(result)
+	}
+	if a.showConfigEdit {
+		result = a.overlayConfigEdit(result)
 	}
 
 	return result
@@ -4251,14 +4267,113 @@ func (a *App) loadConfig() tea.Cmd {
 	}
 }
 
+// configItem represents a single item in the config viewer's flat list.
+type configItem struct {
+	IsHeader bool
+	Label    string           // section header label or formatted key=value
+	Entry    dolt.ConfigEntry // only valid when IsHeader is false
+	Global   bool             // scope: true=global, false=local
+}
+
+// configItems builds the flat list for rendering.
+func (a App) configItems() []configItem {
+	var items []configItem
+
+	if len(a.configGlobal) > 0 {
+		items = append(items, configItem{IsHeader: true, Label: "── Global ──"})
+		for _, e := range a.configGlobal {
+			items = append(items, configItem{Entry: e, Global: true})
+		}
+	}
+	if len(a.configLocal) > 0 {
+		items = append(items, configItem{IsHeader: true, Label: "── Local ──"})
+		for _, e := range a.configLocal {
+			items = append(items, configItem{Entry: e, Global: false})
+		}
+	}
+	if len(items) == 0 {
+		items = append(items, configItem{IsHeader: true, Label: "  No configuration found."})
+	}
+	return items
+}
+
+// configSelectableCount returns the number of selectable (non-header) items.
+func (a App) configSelectableCount() int {
+	return len(a.configGlobal) + len(a.configLocal)
+}
+
+// configSelectedEntry returns the entry at the cursor position.
+// The cursor only counts non-header items.
+func (a App) configSelectedEntry() (entry dolt.ConfigEntry, global bool, ok bool) {
+	idx := 0
+	for _, item := range a.configItems() {
+		if item.IsHeader {
+			continue
+		}
+		if idx == a.configCursor {
+			return item.Entry, item.Global, true
+		}
+		idx++
+	}
+	return dolt.ConfigEntry{}, false, false
+}
+
 func (a App) updateConfigViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	total := a.configSelectableCount()
 	switch msg.String() {
 	case "esc", "q", "@":
 		a.showConfig = false
 		return a, nil
+	case "j", "down":
+		if a.configCursor < total-1 {
+			a.configCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.configCursor > 0 {
+			a.configCursor--
+		}
+		return a, nil
+	case "enter":
+		entry, global, ok := a.configSelectedEntry()
+		if ok {
+			a.showConfigEdit = true
+			a.configEditScope = global
+			a.configEditKey = entry.Key
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Enter new value..."
+			a.branchInput.SetValue(entry.Value)
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+			return a, textinput.Blink
+		}
+	}
+	return a, nil
+}
+
+func (a App) updateConfigEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showConfigEdit = false
+		a.branchInput.Blur()
+		return a, nil
+	case "enter":
+		value := a.branchInput.Value()
+		a.showConfigEdit = false
+		a.showConfig = false
+		a.branchInput.Blur()
+		runner := a.runner
+		key := a.configEditKey
+		global := a.configEditScope
+		return a, func() tea.Msg {
+			if err := runner.ConfigSet(global, key, value); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return ConfigSetSuccessMsg{Key: key, Value: value}
+		}
 	default:
 		var cmd tea.Cmd
-		a.configViewport, cmd = a.configViewport.Update(msg)
+		a.branchInput, cmd = a.branchInput.Update(msg)
 		return a, cmd
 	}
 }
@@ -4271,20 +4386,39 @@ func (a App) overlayConfigViewer(base string) string {
 	if dialogW < 30 {
 		dialogW = a.width - 4
 	}
-	dialogH := a.height - 6
-	if dialogH < 10 {
-		dialogH = a.height - 2
-	}
-
-	a.configViewport.Width = dialogW - 4 // border + padding
-	a.configViewport.Height = dialogH - 4
-	a.configViewport.SetContent(a.configContent)
 
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	menuSelectedStyle := lipgloss.NewStyle().Reverse(true)
+
+	// Find max key length for alignment
+	maxKeyLen := 0
+	for _, e := range a.configGlobal {
+		if len(e.Key) > maxKeyLen {
+			maxKeyLen = len(e.Key)
+		}
+	}
+	for _, e := range a.configLocal {
+		if len(e.Key) > maxKeyLen {
+			maxKeyLen = len(e.Key)
+		}
+	}
 
 	content := titleStyle.Render("Dolt Configuration") + "\n\n"
-	content += a.configViewport.View()
-	content += "\n" + dimStyle.Render("[Esc/q/@] close  [j/k] scroll")
+	cursorIdx := 0
+	for _, item := range a.configItems() {
+		if item.IsHeader {
+			content += item.Label + "\n\n"
+			continue
+		}
+		line := fmt.Sprintf("%-*s = %s", maxKeyLen, item.Entry.Key, item.Entry.Value)
+		if cursorIdx == a.configCursor {
+			content += menuSelectedStyle.Render("> "+line) + "\n"
+		} else {
+			content += "  " + line + "\n"
+		}
+		cursorIdx++
+	}
+	content += "\n" + dimStyle.Render("[Enter] edit  [j/k] navigate  [Esc/q/@] close")
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
@@ -4294,44 +4428,29 @@ func (a App) overlayConfigViewer(base string) string {
 	)
 }
 
-// formatConfigContent builds a display string from config entries.
-func formatConfigContent(global, local []dolt.ConfigEntry) string {
-	var b strings.Builder
-
-	if len(global) > 0 {
-		b.WriteString("── Global ──\n\n")
-		maxKeyLen := 0
-		for _, e := range global {
-			if len(e.Key) > maxKeyLen {
-				maxKeyLen = len(e.Key)
-			}
-		}
-		for _, e := range global {
-			b.WriteString(fmt.Sprintf("  %-*s = %s\n", maxKeyLen, e.Key, e.Value))
-		}
+func (a App) overlayConfigEdit(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
 	}
 
-	if len(local) > 0 {
-		if len(global) > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString("── Local ──\n\n")
-		maxKeyLen := 0
-		for _, e := range local {
-			if len(e.Key) > maxKeyLen {
-				maxKeyLen = len(e.Key)
-			}
-		}
-		for _, e := range local {
-			b.WriteString(fmt.Sprintf("  %-*s = %s\n", maxKeyLen, e.Key, e.Value))
-		}
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	scope := "local"
+	if a.configEditScope {
+		scope = "global"
 	}
 
-	if len(global) == 0 && len(local) == 0 {
-		b.WriteString("  No configuration found.\n")
-	}
+	content := titleStyle.Render("Edit Config ("+scope+")") + "\n\n"
+	content += dimStyle.Render("  Key: ") + a.configEditKey + "\n\n"
+	content += a.branchInput.View() + "\n\n"
+	content += dimStyle.Render("[Enter] save  [Esc] cancel")
 
-	return b.String()
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
 }
 
 // --- Table rename/copy/export input dialog ---
