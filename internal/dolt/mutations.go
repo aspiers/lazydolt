@@ -143,6 +143,19 @@ func (r *Runner) MergeSquash(branch string) (string, error) {
 	return r.Exec("merge", "--squash", branch)
 }
 
+// CherryPick applies the changes from the given commit onto the current branch.
+// Returns ErrMergeConflict if the cherry-pick results in conflicts.
+// Requires a clean working tree.
+func (r *Runner) CherryPick(hash string) (string, error) {
+	return r.mergeWithConflictDetection("cherry-pick", hash)
+}
+
+// CherryPickAbort aborts an in-progress cherry-pick.
+func (r *Runner) CherryPickAbort() error {
+	_, err := r.Exec("cherry-pick", "--abort")
+	return err
+}
+
 // mergeWithConflictDetection runs a merge and detects conflicts
 // by checking for "CONFLICT" in the stdout output.
 func (r *Runner) mergeWithConflictDetection(args ...string) (string, error) {

@@ -100,6 +100,10 @@ type App struct {
 	showMergeMenu bool
 	mergeBranch   string
 
+	// Cherry-pick confirmation
+	showCherryPickConfirm bool
+	cherryPickHash        string
+
 	// Delete branch confirmation
 	showDeleteBranchConfirm bool
 	deleteBranchName        string
@@ -242,6 +246,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Merge menu intercepts all keys when active
 		if a.showMergeMenu {
 			return a.updateMergeMenu(msg)
+		}
+		// Cherry-pick confirmation intercepts all keys when active
+		if a.showCherryPickConfirm {
+			return a.updateCherryPickConfirm(msg)
 		}
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
@@ -540,6 +548,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 			}
+			if msg.String() == "C" {
+				if h := a.commits.SelectedHash(); h != "" {
+					a.showCherryPickConfirm = true
+					a.cherryPickHash = h
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
@@ -628,6 +643,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case MergeAbortMsg:
+		cmds = append(cmds, a.loadData())
+
+	case CherryPickSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case CherryPickConflictMsg:
+		a.setFocus(components.PanelTables)
 		cmds = append(cmds, a.loadData())
 
 	case SQLResultMsg:
@@ -993,6 +1015,9 @@ func (a App) View() string {
 	}
 	if a.showMergeMenu {
 		result = a.overlayMergeMenu(result)
+	}
+	if a.showCherryPickConfirm {
+		result = a.overlayCherryPickConfirm(result)
 	}
 	if a.showStashList {
 		result = a.overlayStashList(result)
@@ -2430,6 +2455,56 @@ func (a App) overlayMergeMenu(base string) string {
 	)
 }
 
+// --- Cherry-pick confirmation ---
+
+func (a App) updateCherryPickConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	hash := a.cherryPickHash
+	runner := a.runner
+	switch msg.String() {
+	case "esc":
+		a.showCherryPickConfirm = false
+		a.cherryPickHash = ""
+		return a, nil
+	case "y", "enter":
+		a.showCherryPickConfirm = false
+		a.cherryPickHash = ""
+		return a, func() tea.Msg {
+			if _, err := runner.CherryPick(hash); errors.Is(err, dolt.ErrMergeConflict) {
+				return CherryPickConflictMsg{Hash: hash}
+			} else if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return CherryPickSuccessMsg{Hash: hash}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayCherryPickConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	shortHash := a.cherryPickHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	content := titleStyle.Render("Cherry-pick "+shortHash) + "\n\n"
+	content += "  Apply this commit onto the current branch?\n\n"
+	content += "  [y/Enter] cherry-pick  " + dimStyle.Render("— apply commit changes") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Stash List ---
 
 func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
@@ -2595,6 +2670,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "Enter", "View commit details"},
 	{"Commits Panel", "A", "Amend last commit"},
 	{"Commits Panel", "g", "Reset to commit"},
+	{"Commits Panel", "C", "Cherry-pick commit"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},
