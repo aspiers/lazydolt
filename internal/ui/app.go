@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/aspiers/lazydolt/internal/config"
 	"github.com/aspiers/lazydolt/internal/dolt"
 	"github.com/aspiers/lazydolt/internal/domain"
 	"github.com/aspiers/lazydolt/internal/ui/components"
@@ -328,6 +329,8 @@ func NewApp(runner *dolt.Runner) App {
 	hf.CharLimit = 50
 	hf.Prompt = "/ "
 
+	cfg := config.Load()
+
 	app := App{
 		runner:         runner,
 		repoName:       filepath.Base(runner.RepoDir),
@@ -345,7 +348,7 @@ func NewApp(runner *dolt.Runner) App {
 		filterInput:    fi,
 		helpFilter:     hf,
 		spinner:        s,
-		leftRatio:      30,
+		leftRatio:      cfg.LeftRatio,
 	}
 	app.syncFocus()
 	return app
@@ -652,15 +655,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "<":
 			if a.leftRatio > 10 {
 				a.leftRatio -= 5
+				a.saveConfig()
 			}
 			return a, nil
 		case ">":
 			if a.leftRatio < 90 {
 				a.leftRatio += 5
+				a.saveConfig()
 			}
 			return a, nil
 		case "=":
 			a.leftRatio = 30
+			a.saveConfig()
 			return a, nil
 		case "P":
 			return a, a.pushCmd()
@@ -4282,6 +4288,11 @@ func (a App) overlayCommitFilterInput(base string) string {
 }
 
 // --- Config viewer ---
+
+// saveConfig persists user preferences (e.g. column width) to disk.
+func (a App) saveConfig() {
+	_ = config.Save(config.Config{LeftRatio: a.leftRatio})
+}
 
 func (a *App) loadConfig() tea.Cmd {
 	runner := a.runner
