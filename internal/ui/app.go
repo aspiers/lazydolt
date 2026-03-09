@@ -76,6 +76,7 @@ type App struct {
 	mainView    MainView
 	diffView    components.DiffView
 	schemaDiff  bool // toggle: show schema diff instead of data diff
+	blameMode   bool // true when showing blame output
 	schemaView  components.SchemaView
 	browserView components.BrowserView
 	logView     components.LogView
@@ -392,6 +393,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return a, tea.Quit
 		case "esc":
+			// Reset blame mode
+			if a.blameMode {
+				a.blameMode = false
+				return a, a.autoPreview()
+			}
 			// Reset schema diff toggle
 			if a.schemaDiff {
 				a.schemaDiff = false
@@ -565,6 +571,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.discardTable = table
 					return a, nil
 				}
+			case "b":
+				table := a.tables.SelectedTable()
+				if table != "" {
+					a.blameMode = true
+					cmds = append(cmds, a.loadBlame(table))
+					return a, tea.Batch(cmds...)
+				}
 			}
 			var cmd tea.Cmd
 			a.tables, cmd = a.tables.Update(msg)
@@ -648,6 +661,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.focusedCursor() != prevCursor {
 			a.schemaDiff = false // reset schema diff toggle on navigation
+			a.blameMode = false  // reset blame mode on navigation
 			cmds = append(cmds, a.autoPreview())
 		}
 
@@ -678,10 +692,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.autoPreview())
 
 	case DiffContentMsg:
-		a.diffView.SetContent(msg.Table, msg.Content)
+		// Don't override blame view with auto-loaded diff
+		if !a.blameMode {
+			a.diffView.SetContent(msg.Table, msg.Content)
+		}
 
 	case SchemaContentMsg:
 		a.schemaView.SetContent(msg.Table, msg.Schema)
+
+	case BlameContentMsg:
+		a.diffView.SetContent("Blame: "+msg.Table, msg.Content)
+		a.mainView = MainViewDiff
 
 	case RefreshMsg:
 		cmds = append(cmds, a.loadData())
@@ -1791,6 +1812,17 @@ func (a *App) loadSchema(table string) tea.Cmd {
 			return ErrorMsg{Err: err}
 		}
 		return SchemaContentMsg{Table: table, Schema: schema.CreateStatement}
+	}
+}
+
+func (a *App) loadBlame(table string) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		output, err := runner.Blame(table)
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return BlameContentMsg{Table: table, Content: output}
 	}
 }
 
@@ -3110,6 +3142,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "T", "Resolve conflicts (theirs)"},
 	{"Tables Panel", "X", "Abort merge"},
 	{"Tables Panel", "s", "View schema"},
+	{"Tables Panel", "b", "View blame"},
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},
 	{"Branches Panel", "Enter", "Checkout branch"},

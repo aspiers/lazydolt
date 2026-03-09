@@ -103,6 +103,12 @@ type SQLResultMsg struct {
 	Result string
 }
 
+// BlameContentMsg carries blame text to the main panel.
+type BlameContentMsg struct {
+	Table   string
+	Content string
+}
+
 // CommitDetailMsg carries the diff stat for a commit's changed tables.
 type CommitDetailMsg struct {
 	Hash   string

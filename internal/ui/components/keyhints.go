@@ -58,6 +58,7 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 			{Key: "[/]", Desc: "tab"},
 			{Key: "a/A", Desc: "stage/unstage all"},
 			{Key: "d", Desc: "discard"},
+			{Key: "b", Desc: "blame"},
 		}
 		if hasConflicts {
 			tableHints = append(tableHints,
