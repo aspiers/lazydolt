@@ -161,6 +161,12 @@ type UndoSuccessMsg struct{ Hash string }
 // RedoSuccessMsg is sent when a redo operation succeeds.
 type RedoSuccessMsg struct{ Hash string }
 
+// branchCommitsMsg carries commits loaded for a specific branch.
+type branchCommitsMsg struct {
+	Branch  string
+	Commits []domain.Commit
+}
+
 // flashTimeoutMsg is sent after a delay to clear the flash message.
 type flashTimeoutMsg struct{ ID int }
 

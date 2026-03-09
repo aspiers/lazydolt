@@ -8,15 +8,21 @@ import (
 )
 
 // Log returns the commit history, most recent first.
+// If branch is empty, the current branch's log is returned.
+// If branch is set, that branch's log is returned without checking it out.
 // If limit is 0, all commits are returned.
 // Each commit includes its parent hashes from dolt_commit_ancestors.
-func (r *Runner) Log(limit int) ([]domain.Commit, error) {
-	query := `SELECT l.commit_hash, l.committer, l.email, l.date, l.message,
+func (r *Runner) Log(branch string, limit int) ([]domain.Commit, error) {
+	logTable := "dolt_log"
+	if branch != "" {
+		logTable = fmt.Sprintf("dolt_log('%s')", branch)
+	}
+	query := fmt.Sprintf(`SELECT l.commit_hash, l.committer, l.email, l.date, l.message,
        GROUP_CONCAT(a.parent_hash ORDER BY a.parent_index SEPARATOR ',') as parents
-FROM dolt_log l
+FROM %s l
 LEFT JOIN dolt_commit_ancestors a ON l.commit_hash = a.commit_hash
 GROUP BY l.commit_hash, l.committer, l.email, l.date, l.message
-ORDER BY l.date DESC`
+ORDER BY l.date DESC`, logTable)
 	if limit > 0 {
 		query = fmt.Sprintf("%s LIMIT %d", query, limit)
 	}

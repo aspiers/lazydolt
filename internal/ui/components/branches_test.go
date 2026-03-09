@@ -64,9 +64,22 @@ func TestBranchesModel_IgnoreWhenUnfocused(t *testing.T) {
 	}
 }
 
-func TestBranchesModel_CheckoutOnEnter(t *testing.T) {
+func TestBranchesModel_ViewOnEnter(t *testing.T) {
 	m := newBranchesModel(sampleBranches(), 1, true) // cursor on "feature"
 	_, cmd := m.Update(specialKeyMsg(tea.KeyEnter))
+	msg := execCmd(t, cmd)
+	viewMsg, ok := msg.(ViewBranchMsg)
+	if !ok {
+		t.Fatalf("expected ViewBranchMsg, got %T", msg)
+	}
+	if viewMsg.Branch != "feature" {
+		t.Errorf("branch = %q, want %q", viewMsg.Branch, "feature")
+	}
+}
+
+func TestBranchesModel_CheckoutOnSpace(t *testing.T) {
+	m := newBranchesModel(sampleBranches(), 1, true) // cursor on "feature"
+	_, cmd := m.Update(specialKeyMsg(tea.KeySpace))
 	msg := execCmd(t, cmd)
 	checkoutMsg, ok := msg.(CheckoutBranchMsg)
 	if !ok {

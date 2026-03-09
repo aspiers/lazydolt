@@ -91,6 +91,10 @@ func (m BranchesModel) Update(msg tea.Msg) (BranchesModel, tea.Cmd) {
 			m.HScroll += HScrollStep
 		case "enter":
 			if b := m.SelectedBranch(); b != "" {
+				return m, func() tea.Msg { return ViewBranchMsg{Branch: b} }
+			}
+		case " ":
+			if b := m.SelectedBranch(); b != "" {
 				return m, func() tea.Msg { return CheckoutBranchMsg{Branch: b} }
 			}
 		case "n":
@@ -336,6 +340,7 @@ func (m BranchesModel) filteredIndices() []int {
 
 // Message types for parent to handle.
 type CheckoutBranchMsg struct{ Branch string }
+type ViewBranchMsg struct{ Branch string }
 type NewBranchPromptMsg struct{}
 type DeleteBranchMsg struct{ Branch string }
 type DeleteTagMsg struct{ Tag string }

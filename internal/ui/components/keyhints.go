@@ -72,7 +72,8 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 		return append(tableHints, global...)
 	case PanelBranches:
 		return append([]KeyHint{
-			{Key: "Enter", Desc: "checkout"},
+			{Key: "Enter", Desc: "view"},
+			{Key: "Space", Desc: "checkout"},
 			{Key: "m", Desc: "merge"},
 			{Key: "e", Desc: "rebase"},
 			{Key: "n", Desc: "new"},

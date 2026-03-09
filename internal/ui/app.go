@@ -183,6 +183,10 @@ type App struct {
 	flashFull    string // full untruncated message for overlay display
 	flashID      int    // monotonic ID to match timeout messages
 
+	// Branch commit viewing (view another branch's commits without checkout)
+	currentBranch string // the checked-out branch name
+	viewingBranch string // non-empty when viewing another branch's commits
+
 	// Help
 	showHelp     bool
 	helpFilter   textinput.Model
@@ -474,6 +478,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.mainView = MainViewDiff
 				return a, a.autoViewDiff()
 			}
+			// If viewing another branch's commits, return to current branch
+			if a.viewingBranch != "" {
+				a.viewingBranch = ""
+				return a, a.loadData()
+			}
 			return a, nil
 		case "tab":
 			a.cycleFocus()
@@ -755,6 +764,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DataLoadedMsg:
 		a.dataLoaded = true
+		a.currentBranch = msg.Branch
 		a.statusBar.Dirty = msg.Dirty
 		a.statusBar.RepoDir = a.repoName
 		a.statusBar.ParentDir = a.repoParent
@@ -762,7 +772,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.branches.Branches = msg.Branches
 		a.branches.Tags = msg.Tags
 		a.branches.Remotes = msg.Remotes
-		a.commits.Commits = msg.Commits
+		// Only update commits if not viewing a different branch
+		if a.viewingBranch == "" {
+			a.commits.Commits = msg.Commits
+		}
 		a.clearFlash()
 		// Clamp cursors
 		a.tables.ClampCursor()
@@ -973,7 +986,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewTableDataMsg:
 		cmds = append(cmds, a.loadTableData(msg.Table))
 	case checkoutBranchMsg:
+		a.viewingBranch = "" // clear branch viewing on checkout
 		cmds = append(cmds, a.checkoutCmd(msg.Branch))
+	case viewBranchMsg:
+		cmds = append(cmds, a.viewBranchCommits(msg.Branch))
+	case branchCommitsMsg:
+		a.commits.Commits = msg.Commits
+		a.commits.Cursor = 0
 	case deleteBranchMsg:
 		a.showDeleteBranchConfirm = true
 		a.deleteBranchName = msg.Branch
@@ -1194,8 +1213,7 @@ func (a App) View() string {
 
 		// Commits panel
 		a.commits.Height = commitsH
-		commitsTitle := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-		commitsBox := a.panelBox(components.PanelCommits, leftW, commitsH, commitsTitle, panelView(a.commits.View()))
+		commitsBox := a.panelBox(components.PanelCommits, leftW, commitsH, a.commitsTitle(), panelView(a.commits.View()))
 
 		// Left column
 		left := lipgloss.JoinVertical(lipgloss.Left, statusBox, tablesBox, branchesBox, commitsBox)
@@ -1429,8 +1447,7 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 		return a.panelBox(components.PanelBranches, width, innerH, title, content(a.branches.View()))
 	case components.PanelCommits:
 		a.commits.Height = innerH
-		title := fmt.Sprintf("[3]─Commits (%d)", len(a.commits.Commits))
-		return a.panelBox(components.PanelCommits, width, innerH, title, content(a.commits.View()))
+		return a.panelBox(components.PanelCommits, width, innerH, a.commitsTitle(), content(a.commits.View()))
 	default:
 		// Status panel or unknown — show status
 		a.statusBar.Width = width - 2
@@ -1678,6 +1695,35 @@ func (a App) loadingText() string {
 
 // --- Data loading commands ---
 
+// commitsTitle returns the title for the commits panel, including the viewed
+// branch name if viewing a different branch's commits.
+func (a *App) commitsTitle() string {
+	count := len(a.commits.Commits)
+	if a.viewingBranch != "" {
+		return fmt.Sprintf("[3]─Commits: %s (%d)", a.viewingBranch, count)
+	}
+	return fmt.Sprintf("[3]─Commits (%d)", count)
+}
+
+// viewBranchCommits loads commits for a specific branch without checking it out.
+// If branch is the current branch, it clears the viewingBranch state.
+func (a *App) viewBranchCommits(branch string) tea.Cmd {
+	// If viewing current branch, just clear the viewing state
+	if branch == a.currentBranch {
+		a.viewingBranch = ""
+		return a.loadData()
+	}
+	a.viewingBranch = branch
+	runner := a.runner
+	return func() tea.Msg {
+		commits, err := runner.Log(branch, 50)
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("log %s: %w", branch, err)}
+		}
+		return branchCommitsMsg{Branch: branch, Commits: commits}
+	}
+}
+
 func (a *App) loadData() tea.Cmd {
 	runner := a.runner
 	return func() tea.Msg {
@@ -1726,7 +1772,7 @@ func (a *App) loadData() tea.Cmd {
 			branchesCh <- branchesResult{br, err}
 		}()
 		go func() {
-			c, err := runner.Log(50)
+			c, err := runner.Log("", 50)
 			commitsCh <- commitsResult{c, err}
 		}()
 		go func() {
@@ -3841,7 +3887,8 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "o", "Table operations (rename, copy, drop, export)"},
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},
-	{"Branches Panel", "Enter", "Checkout branch"},
+	{"Branches Panel", "Enter", "View branch commits"},
+	{"Branches Panel", "Space", "Checkout branch"},
 	{"Branches Panel", "m", "Merge into current"},
 	{"Branches Panel", "e", "Rebase onto branch"},
 	{"Branches Panel", "n", "New branch"},
@@ -4036,6 +4083,7 @@ type viewSchemaMsg = components.ViewSchemaMsg
 type viewTableDataMsg = components.ViewTableDataMsg
 type viewCommitMsg = components.ViewCommitMsg
 type checkoutBranchMsg = components.CheckoutBranchMsg
+type viewBranchMsg = components.ViewBranchMsg
 type deleteBranchMsg = components.DeleteBranchMsg
 type deleteTagMsg = components.DeleteTagMsg
 type newBranchPromptMsg = components.NewBranchPromptMsg
