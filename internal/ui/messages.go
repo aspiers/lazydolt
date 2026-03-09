@@ -114,6 +114,18 @@ type ReflogContentMsg struct {
 	Content string
 }
 
+// TableRenameSuccessMsg is sent when a table is renamed.
+type TableRenameSuccessMsg struct{ OldName, NewName string }
+
+// TableCopySuccessMsg is sent when a table is copied.
+type TableCopySuccessMsg struct{ SrcName, DstName string }
+
+// TableDropSuccessMsg is sent when a table is dropped.
+type TableDropSuccessMsg struct{ Name string }
+
+// TableExportSuccessMsg is sent when a table is exported.
+type TableExportSuccessMsg struct{ Table, Path string }
+
 // CommitDetailMsg carries the diff stat for a commit's changed tables.
 type CommitDetailMsg struct {
 	Hash   string

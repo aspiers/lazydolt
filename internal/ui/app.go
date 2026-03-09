@@ -137,6 +137,16 @@ type App struct {
 	renameBranchOld  string
 	renameBranchErr  string
 
+	// Table operations menu and sub-dialogs
+	showTableOpsMenu bool
+	tableOpsTable    string // the table being operated on
+	tableOpsCursor   int    // menu cursor (0=rename, 1=copy, 2=drop, 3=export)
+	showTableRename  bool
+	showTableCopy    bool
+	showTableDrop    bool
+	showTableExport  bool
+	tableOpsErr      string
+
 	// Discard confirmation
 	showDiscardConfirm bool
 	discardTable       string
@@ -291,6 +301,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Delete tag confirmation intercepts all keys when active
 		if a.showDeleteTagConfirm {
 			return a.updateDeleteTagConfirm(msg)
+		}
+		// Table operations menu/dialogs intercept all keys when active
+		if a.showTableRename || a.showTableCopy || a.showTableExport {
+			return a.updateTableInputDialog(msg)
+		}
+		if a.showTableDrop {
+			return a.updateTableDropConfirm(msg)
+		}
+		if a.showTableOpsMenu {
+			return a.updateTableOpsMenu(msg)
 		}
 		// Add remote dialog intercepts all keys when active
 		if a.showAddRemote {
@@ -578,6 +598,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, a.loadBlame(table))
 					return a, tea.Batch(cmds...)
 				}
+			case "o":
+				table := a.tables.SelectedTable()
+				if table != "" {
+					a.showTableOpsMenu = true
+					a.tableOpsTable = table
+					a.tableOpsCursor = 0
+					return a, nil
+				}
 			}
 			var cmd tea.Cmd
 			a.tables, cmd = a.tables.Update(msg)
@@ -766,6 +794,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DeleteRemoteSuccessMsg:
 		cmds = append(cmds, a.loadData())
+
+	case TableRenameSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case TableCopySuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case TableDropSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case TableExportSuccessMsg:
+		a.errMsg = "" // clear any previous error
+		a.diffView.SetContent("Export: "+msg.Table, "Exported to "+msg.Path)
+		a.mainView = MainViewDiff
 
 	case SQLResultMsg:
 		// Display SQL results in the diff view
@@ -1156,6 +1198,15 @@ func (a App) View() string {
 	}
 	if a.showDeleteTagConfirm {
 		result = a.overlayDeleteTagConfirm(result)
+	}
+	if a.showTableOpsMenu {
+		result = a.overlayTableOpsMenu(result)
+	}
+	if a.showTableRename || a.showTableCopy || a.showTableExport {
+		result = a.overlayTableInputDialog(result)
+	}
+	if a.showTableDrop {
+		result = a.overlayTableDropConfirm(result)
 	}
 	if a.showAddRemote {
 		result = a.overlayAddRemoteDialog(result)
@@ -3008,6 +3059,223 @@ func (a App) overlayDeleteRemoteConfirm(base string) string {
 	)
 }
 
+// --- Table operations menu ---
+
+var tableOpsItems = []string{"Rename", "Copy", "Drop", "Export CSV"}
+
+func (a App) updateTableOpsMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showTableOpsMenu = false
+		return a, nil
+	case "j", "down":
+		if a.tableOpsCursor < len(tableOpsItems)-1 {
+			a.tableOpsCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.tableOpsCursor > 0 {
+			a.tableOpsCursor--
+		}
+		return a, nil
+	case "enter", " ":
+		a.showTableOpsMenu = false
+		switch a.tableOpsCursor {
+		case 0: // Rename
+			a.showTableRename = true
+			a.tableOpsErr = ""
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Enter new table name..."
+			a.branchInput.SetValue(a.tableOpsTable)
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+		case 1: // Copy
+			a.showTableCopy = true
+			a.tableOpsErr = ""
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Enter copy name..."
+			a.branchInput.SetValue(a.tableOpsTable + "_copy")
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+		case 2: // Drop
+			a.showTableDrop = true
+		case 3: // Export
+			a.showTableExport = true
+			a.tableOpsErr = ""
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Enter file path..."
+			a.branchInput.SetValue(a.tableOpsTable + ".csv")
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+		}
+		return a, nil
+	}
+	return a, nil
+}
+
+func (a App) overlayTableOpsMenu(base string) string {
+	dialogW := 40
+	if a.width < 50 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	menuSelectedStyle := lipgloss.NewStyle().Reverse(true)
+
+	content := titleStyle.Render("Table: "+a.tableOpsTable) + "\n\n"
+	for i, item := range tableOpsItems {
+		prefix := "  "
+		if i == a.tableOpsCursor {
+			prefix = "> "
+			content += menuSelectedStyle.Render(prefix+item) + "\n"
+		} else {
+			content += prefix + item + "\n"
+		}
+	}
+	content += "\n" + dimStyle.Render("[Enter] select  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// --- Table rename/copy/export input dialog ---
+
+func (a App) updateTableInputDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showTableRename = false
+		a.showTableCopy = false
+		a.showTableExport = false
+		a.tableOpsErr = ""
+		return a, nil
+	case "enter":
+		name := strings.TrimSpace(a.branchInput.Value())
+		if name == "" {
+			a.tableOpsErr = "Name cannot be empty"
+			return a, nil
+		}
+		table := a.tableOpsTable
+		runner := a.runner
+
+		if a.showTableRename {
+			a.showTableRename = false
+			a.tableOpsErr = ""
+			return a, func() tea.Msg {
+				if err := runner.TableRename(table, name); err != nil {
+					return ErrorMsg{Err: err}
+				}
+				return TableRenameSuccessMsg{OldName: table, NewName: name}
+			}
+		}
+		if a.showTableCopy {
+			a.showTableCopy = false
+			a.tableOpsErr = ""
+			return a, func() tea.Msg {
+				if err := runner.TableCopy(table, name); err != nil {
+					return ErrorMsg{Err: err}
+				}
+				return TableCopySuccessMsg{SrcName: table, DstName: name}
+			}
+		}
+		if a.showTableExport {
+			a.showTableExport = false
+			a.tableOpsErr = ""
+			return a, func() tea.Msg {
+				if err := runner.TableExport(table, name); err != nil {
+					return ErrorMsg{Err: err}
+				}
+				return TableExportSuccessMsg{Table: table, Path: name}
+			}
+		}
+	}
+	var cmd tea.Cmd
+	a.branchInput, cmd = a.branchInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlayTableInputDialog(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	var title, label string
+	if a.showTableRename {
+		title = "Rename table " + a.tableOpsTable
+		label = "New name:"
+	} else if a.showTableCopy {
+		title = "Copy table " + a.tableOpsTable
+		label = "Copy name:"
+	} else {
+		title = "Export table " + a.tableOpsTable
+		label = "File path:"
+	}
+
+	content := titleStyle.Render(title) + "\n\n"
+	content += "  " + label + "\n"
+	content += "  " + a.branchInput.View() + "\n\n"
+	if a.tableOpsErr != "" {
+		content += errorStyle.Render("  "+a.tableOpsErr) + "\n\n"
+	}
+	content += dimStyle.Render("[Enter] confirm  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// --- Table drop confirmation ---
+
+func (a App) updateTableDropConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showTableDrop = false
+		return a, nil
+	case "y", "enter":
+		table := a.tableOpsTable
+		a.showTableDrop = false
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.TableDrop(table); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return TableDropSuccessMsg{Name: table}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayTableDropConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Drop table "+a.tableOpsTable) + "\n\n"
+	content += "  Are you sure? This removes the table from the working set.\n\n"
+	content += "  [y/Enter] drop  " + dimStyle.Render("— remove table") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Stash List ---
 
 func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
@@ -3163,6 +3431,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "X", "Abort merge"},
 	{"Tables Panel", "s", "View schema"},
 	{"Tables Panel", "b", "View blame"},
+	{"Tables Panel", "o", "Table operations (rename, copy, drop, export)"},
 	{"Tables Panel", "Enter", "Browse table data"},
 	{"Branches Panel", "j/k", "Navigate"},
 	{"Branches Panel", "Enter", "Checkout branch"},
