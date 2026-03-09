@@ -162,6 +162,9 @@ type UndoSuccessMsg struct{ Hash string }
 // RedoSuccessMsg is sent when a redo operation succeeds.
 type RedoSuccessMsg struct{ Hash string }
 
+// DumpSuccessMsg is sent when a database dump succeeds.
+type DumpSuccessMsg struct{ Path string }
+
 // ConfigLoadedMsg carries config entries to display.
 type ConfigLoadedMsg struct {
 	Global []dolt.ConfigEntry

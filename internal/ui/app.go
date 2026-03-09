@@ -267,6 +267,12 @@ type App struct {
 	configViewport viewport.Model
 	configContent  string
 
+	// Database export
+	showExportMenu   bool
+	exportMenuCursor int
+	showExportInput  bool
+	exportFormat     dolt.DumpFormat
+
 	// Layout
 	screenMode ScreenMode
 	leftRatio  int // left column width percentage (default 30)
@@ -410,6 +416,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.showTableDrop {
 			return a.updateTableDropConfirm(msg)
+		}
+		if a.showExportInput {
+			return a.updateExportInput(msg)
+		}
+		if a.showExportMenu {
+			return a.updateExportMenu(msg)
 		}
 		if a.showFilterInput {
 			return a.updateCommitFilterInput(msg)
@@ -665,6 +677,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, textinput.Blink
 		case "@":
 			return a, a.loadConfig()
+		case "E":
+			a.showExportMenu = true
+			a.exportMenuCursor = 0
+			return a, nil
 		case "z":
 			if len(a.undoStack) > 0 {
 				a.showUndoConfirm = true
@@ -1045,6 +1061,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StashSuccessMsg:
 		cmds = append(cmds, a.setFlashSuccess("Changes stashed"))
 		cmds = append(cmds, a.loadData())
+
+	case DumpSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Exported database to "+msg.Path))
 
 	case ConfigLoadedMsg:
 		a.configContent = formatConfigContent(msg.Global, msg.Local)
@@ -1490,6 +1509,12 @@ func (a App) View() string {
 	}
 	if a.showDeleteTagConfirm {
 		result = a.overlayDeleteTagConfirm(result)
+	}
+	if a.showExportMenu {
+		result = a.overlayExportMenu(result)
+	}
+	if a.showExportInput {
+		result = a.overlayExportInput(result)
 	}
 	if a.showCommitFilter {
 		result = a.overlayCommitFilterMenu(result)
@@ -3950,6 +3975,128 @@ func (a App) overlaySortMenu(base string) string {
 	)
 }
 
+// --- Database export menu ---
+
+var exportFormatItems = []string{"SQL (.sql)", "CSV (directory)", "JSON (directory)"}
+var exportFormats = []dolt.DumpFormat{dolt.DumpFormatSQL, dolt.DumpFormatCSV, dolt.DumpFormatJSON}
+
+func defaultExportPath(format dolt.DumpFormat) string {
+	switch format {
+	case dolt.DumpFormatCSV:
+		return "doltdump/"
+	case dolt.DumpFormatJSON:
+		return "doltdump/"
+	default:
+		return "doltdump.sql"
+	}
+}
+
+func (a App) updateExportMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showExportMenu = false
+		return a, nil
+	case "j", "down":
+		if a.exportMenuCursor < len(exportFormatItems)-1 {
+			a.exportMenuCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.exportMenuCursor > 0 {
+			a.exportMenuCursor--
+		}
+		return a, nil
+	case "enter", " ":
+		a.showExportMenu = false
+		a.exportFormat = exportFormats[a.exportMenuCursor]
+		a.showExportInput = true
+		a.branchInput.Reset()
+		a.branchInput.Placeholder = "Enter output path..."
+		a.branchInput.SetValue(defaultExportPath(a.exportFormat))
+		a.branchInput.Focus()
+		a.branchInput.CursorEnd()
+		return a, textinput.Blink
+	}
+	return a, nil
+}
+
+func (a App) updateExportInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showExportInput = false
+		a.branchInput.Blur()
+		return a, nil
+	case "enter":
+		path := strings.TrimSpace(a.branchInput.Value())
+		if path == "" {
+			return a, nil
+		}
+		a.showExportInput = false
+		a.branchInput.Blur()
+		runner := a.runner
+		format := a.exportFormat
+		return a, func() tea.Msg {
+			if err := runner.Dump(format, path, true); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return DumpSuccessMsg{Path: path}
+		}
+	default:
+		var cmd tea.Cmd
+		a.branchInput, cmd = a.branchInput.Update(msg)
+		return a, cmd
+	}
+}
+
+func (a App) overlayExportMenu(base string) string {
+	dialogW := 40
+	if a.width < 50 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	menuSelectedStyle := lipgloss.NewStyle().Reverse(true)
+
+	content := titleStyle.Render("Export Database") + "\n\n"
+	for i, item := range exportFormatItems {
+		prefix := "  "
+		if i == a.exportMenuCursor {
+			prefix = "> "
+			content += menuSelectedStyle.Render(prefix+item) + "\n"
+		} else {
+			content += prefix + item + "\n"
+		}
+	}
+	content += "\n" + dimStyle.Render("[Enter] select  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+func (a App) overlayExportInput(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Export as "+string(a.exportFormat)) + "\n\n"
+	content += a.branchInput.View() + "\n\n"
+	content += dimStyle.Render("[Enter] export  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Commit filter menu ---
 
 var commitFilterItems = []string{"By author", "By message", "Clear filter"}
@@ -4687,6 +4834,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "z", "Undo last operation"},
 	{"Global", "Z", "Redo undone operation"},
 	{"Global", "y", "Copy selected item to clipboard"},
+	{"Global", "E", "Export database (dump)"},
 	{"Global", "@", "View dolt configuration"},
 	{"Global", "Ctrl+L", "Redraw screen"},
 	{"Global", "?", "Toggle help"},
