@@ -161,6 +161,9 @@ type UndoSuccessMsg struct{ Hash string }
 // RedoSuccessMsg is sent when a redo operation succeeds.
 type RedoSuccessMsg struct{ Hash string }
 
+// flashTimeoutMsg is sent after a delay to clear the flash message.
+type flashTimeoutMsg struct{ ID int }
+
 // undoableResultMsg wraps a mutation result with pre-mutation state for undo.
 // This is unexported because it's only used internally by the App.
 type undoableResultMsg struct {
@@ -171,11 +174,13 @@ type undoableResultMsg struct {
 // undoResultMsg is sent when an undo operation succeeds, carrying the
 // state to push onto the redo stack.
 type undoResultMsg struct {
-	RedoEntry domain.UndoEntry
+	RedoEntry  domain.UndoEntry
+	TargetHash string // the hash we reset to
 }
 
 // redoResultMsg is sent when a redo operation succeeds, carrying the
 // state to push onto the undo stack.
 type redoResultMsg struct {
-	UndoEntry domain.UndoEntry
+	UndoEntry  domain.UndoEntry
+	TargetHash string // the hash we reset to
 }

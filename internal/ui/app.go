@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -176,8 +177,11 @@ type App struct {
 	filterInput  textinput.Model
 	filterActive bool // text input is focused
 
-	// Error flash
-	errMsg string
+	// Flash message (error or success)
+	flashMsg     string
+	flashIsError bool   // true for errors, false for success
+	flashFull    string // full untruncated message for overlay display
+	flashID      int    // monotonic ID to match timeout messages
 
 	// Help
 	showHelp     bool
@@ -564,14 +568,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(a.undoStack) > 0 {
 				a.showUndoConfirm = true
 			} else {
-				a.errMsg = "Nothing to undo"
+				return a, a.setFlashError("Nothing to undo")
 			}
 			return a, nil
 		case "Z":
 			if len(a.redoStack) > 0 {
 				a.showRedoConfirm = true
 			} else {
-				a.errMsg = "Nothing to redo"
+				return a, a.setFlashError("Nothing to redo")
 			}
 			return a, nil
 		}
@@ -759,7 +763,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.branches.Tags = msg.Tags
 		a.branches.Remotes = msg.Remotes
 		a.commits.Commits = msg.Commits
-		a.errMsg = ""
+		a.clearFlash()
 		// Clamp cursors
 		a.tables.ClampCursor()
 		if a.branches.Cursor >= a.branches.ItemCount() {
@@ -789,77 +793,101 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case ErrorMsg:
-		a.errMsg = msg.Err.Error()
+		cmds = append(cmds, a.setFlashError(msg.Err.Error()))
 
 	case CommitSuccessMsg:
 		a.showCommit = false
 		a.commitErr = ""
+		cmds = append(cmds, a.setFlashSuccess("Committed "+msg.Hash[:8]))
 		cmds = append(cmds, a.loadData())
 
 	case ResetSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Reset ("+msg.Mode+") successful"))
 		cmds = append(cmds, a.loadData())
 
 	case RemoteOpSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess(msg.Op+" successful"))
 		cmds = append(cmds, a.loadData())
 
 	case MergeSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Merged "+msg.Branch))
 		cmds = append(cmds, a.loadData())
 
 	case MergeConflictMsg:
 		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.setFlashError("Merge conflicts with "+msg.Branch))
 		cmds = append(cmds, a.loadData())
 
 	case ConflictResolveMsg:
+		side := "theirs"
+		if msg.Ours {
+			side = "ours"
+		}
+		cmds = append(cmds, a.setFlashSuccess("Resolved "+msg.Table+" with "+side))
 		cmds = append(cmds, a.loadData())
 
 	case MergeAbortMsg:
+		cmds = append(cmds, a.setFlashSuccess("Merge aborted"))
 		cmds = append(cmds, a.loadData())
 
 	case RebaseSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Rebased onto "+msg.Branch))
 		cmds = append(cmds, a.loadData())
 
 	case RebaseConflictMsg:
 		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.setFlashError("Rebase conflicts with "+msg.Branch))
 		cmds = append(cmds, a.loadData())
 
 	case RebaseAbortMsg:
+		cmds = append(cmds, a.setFlashSuccess("Rebase aborted"))
 		cmds = append(cmds, a.loadData())
 
 	case CherryPickSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Cherry-picked "+msg.Hash[:8]))
 		cmds = append(cmds, a.loadData())
 
 	case CherryPickConflictMsg:
 		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.setFlashError("Cherry-pick conflicts for "+msg.Hash[:8]))
 		cmds = append(cmds, a.loadData())
 
 	case RevertSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Reverted "+msg.Hash[:8]))
 		cmds = append(cmds, a.loadData())
 
 	case TagSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Created tag "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case DeleteTagSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Deleted tag "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case AddRemoteSuccessMsg:
 		a.showAddRemote = false
 		a.addRemoteErr = ""
+		cmds = append(cmds, a.setFlashSuccess("Added remote "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case DeleteRemoteSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Deleted remote "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case TableRenameSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Renamed "+msg.OldName+" → "+msg.NewName))
 		cmds = append(cmds, a.loadData())
 
 	case TableCopySuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Copied "+msg.SrcName+" → "+msg.DstName))
 		cmds = append(cmds, a.loadData())
 
 	case TableDropSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Dropped table "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case TableExportSuccessMsg:
-		a.errMsg = "" // clear any previous error
+		cmds = append(cmds, a.setFlashSuccess("Exported "+msg.Table+" to "+msg.Path))
 		a.diffView.SetContent("Export: "+msg.Table, "Exported to "+msg.Path)
 		a.mainView = MainViewDiff
 
@@ -870,6 +898,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.mainView = MainViewDiff
 
 	case StashSuccessMsg:
+		cmds = append(cmds, a.setFlashSuccess("Changes stashed"))
 		cmds = append(cmds, a.loadData())
 
 	case StashListMsg:
@@ -881,21 +910,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StashPopMsg:
 		a.showStashList = false
+		cmds = append(cmds, a.setFlashSuccess(fmt.Sprintf("Popped stash@{%d}", msg.Index)))
 		cmds = append(cmds, a.loadData())
 
 	case StashDropMsg:
 		// Refresh the stash list after drop
 		a.showStashList = false
+		cmds = append(cmds, a.setFlashSuccess(fmt.Sprintf("Dropped stash@{%d}", msg.Index)))
 		cmds = append(cmds, a.loadData())
 
 	case NewBranchSuccessMsg:
 		a.showBranch = false
 		a.branchErr = ""
+		cmds = append(cmds, a.setFlashSuccess("Created branch "+msg.Name))
 		cmds = append(cmds, a.loadData())
 
 	case RenameBranchSuccessMsg:
 		a.showRenameBranch = false
 		a.renameBranchErr = ""
+		cmds = append(cmds, a.setFlashSuccess("Renamed "+msg.OldName+" → "+msg.NewName))
 		cmds = append(cmds, a.loadData())
 
 	// Undo/redo messages
@@ -909,12 +942,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case undoResultMsg:
 		// Undo succeeded — push to redo stack and refresh
 		a.redoStack = append(a.redoStack, msg.RedoEntry)
+		cmds = append(cmds, a.setFlashSuccess("Undo: reset to "+msg.TargetHash[:8]))
 		cmds = append(cmds, a.loadData())
 
 	case redoResultMsg:
 		// Redo succeeded — push to undo stack and refresh
 		a.undoStack = append(a.undoStack, msg.UndoEntry)
+		cmds = append(cmds, a.setFlashSuccess("Redo: reset to "+msg.TargetHash[:8]))
 		cmds = append(cmds, a.loadData())
+
+	case flashTimeoutMsg:
+		// Auto-clear flash message if it hasn't been replaced
+		if msg.ID == a.flashID {
+			a.clearFlash()
+		}
 
 	// Component messages that bubble up
 	case stageTableMsg:
@@ -1236,9 +1277,19 @@ func (a App) View() string {
 		}
 	}
 
-	// Error bar
-	if a.errMsg != "" {
-		hints = errorStyle.Render("Error: "+a.errMsg) + "  " + hints
+	// Flash message bar
+	if a.flashMsg != "" {
+		if a.flashIsError {
+			// Truncate long errors for the hint bar
+			display := a.flashMsg
+			maxLen := a.width / 2
+			if len(display) > maxLen && maxLen > 3 {
+				display = display[:maxLen-3] + "..."
+			}
+			hints = errorStyle.Render("Error: "+display) + "  " + hints
+		} else {
+			hints = successStyle.Render("✓ "+a.flashMsg) + "  " + hints
+		}
 	}
 
 	result := body + "\n" + hints
@@ -2144,6 +2195,42 @@ func (a *App) commitHeader(hash string) string {
 	return ""
 }
 
+// --- Flash messages ---
+
+const flashDuration = 5 * time.Second
+
+var successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+
+// setFlashError sets an error flash message with auto-clear timeout.
+func (a *App) setFlashError(msg string) tea.Cmd {
+	a.flashID++
+	a.flashMsg = msg
+	a.flashIsError = true
+	a.flashFull = msg
+	id := a.flashID
+	return tea.Tick(flashDuration, func(time.Time) tea.Msg {
+		return flashTimeoutMsg{ID: id}
+	})
+}
+
+// setFlashSuccess sets a success flash message with auto-clear timeout.
+func (a *App) setFlashSuccess(msg string) tea.Cmd {
+	a.flashID++
+	a.flashMsg = msg
+	a.flashIsError = false
+	a.flashFull = ""
+	id := a.flashID
+	return tea.Tick(flashDuration, func(time.Time) tea.Msg {
+		return flashTimeoutMsg{ID: id}
+	})
+}
+
+// clearFlash clears the flash message.
+func (a *App) clearFlash() {
+	a.flashMsg = ""
+	a.flashFull = ""
+}
+
 // --- Mutation commands ---
 
 func (a *App) stageCmd(table string) tea.Cmd {
@@ -2307,6 +2394,7 @@ func (a App) updateUndoConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Hash:        curHash,
 					Description: entry.Description,
 				},
+				TargetHash: entry.Hash,
 			}
 		}
 	}
@@ -2348,6 +2436,7 @@ func (a App) updateRedoConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Hash:        curHash,
 					Description: entry.Description,
 				},
+				TargetHash: entry.Hash,
 			}
 		}
 	}
@@ -2493,8 +2582,7 @@ func (a App) overlaySQLDialog(base string) string {
 func (a *App) startCommit() tea.Cmd {
 	dirty, _ := a.runner.IsDirty()
 	if !dirty {
-		a.errMsg = "Nothing to commit"
-		return nil
+		return a.setFlashError("Nothing to commit")
 	}
 
 	// Check if anything is staged
@@ -2507,8 +2595,7 @@ func (a *App) startCommit() tea.Cmd {
 		}
 	}
 	if !hasStaged {
-		a.errMsg = "Nothing staged to commit (use Space to stage tables)"
-		return nil
+		return a.setFlashError("Nothing staged to commit (use Space to stage tables)")
 	}
 
 	a.showCommit = true
@@ -2520,8 +2607,7 @@ func (a *App) startCommit() tea.Cmd {
 
 func (a *App) startAmend() tea.Cmd {
 	if len(a.commits.Commits) == 0 {
-		a.errMsg = "No commits to amend"
-		return nil
+		return a.setFlashError("No commits to amend")
 	}
 	a.showCommit = true
 	a.amendMode = true
