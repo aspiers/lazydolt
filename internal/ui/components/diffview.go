@@ -44,7 +44,7 @@ func (d *DiffView) SetContent(table, content string) {
 		return
 	}
 
-	d.Viewport.SetContent(colorizeDiff(content))
+	d.Viewport.SetContent(colorizeDiff(SanitizeForDisplay(content)))
 	d.Viewport.GotoTop()
 }
 

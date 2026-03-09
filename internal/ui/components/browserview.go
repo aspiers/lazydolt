@@ -169,7 +169,7 @@ func (bv BrowserView) renderTable() string {
 				vals[i] = "NULL"
 				isNull[i] = true
 			} else {
-				vals[i] = fmt.Sprintf("%v", v)
+				vals[i] = SanitizeForDisplay(fmt.Sprintf("%v", v))
 			}
 		}
 		sb.WriteString(bv.buildRow(widths, vals, isNull))
@@ -207,7 +207,7 @@ func (bv BrowserView) calcColWidths() []int {
 			if !exists || v == nil {
 				s = "NULL"
 			} else {
-				s = fmt.Sprintf("%v", v)
+				s = SanitizeForDisplay(fmt.Sprintf("%v", v))
 			}
 			if len(s) > widths[i] {
 				widths[i] = len(s)
