@@ -95,11 +95,23 @@ func (m CommitsModel) View() string {
 
 	start, end := visibleRange(cursorPos, len(indices), m.Height)
 
+	// Build graph for all commits (not just visible ones) to get
+	// correct lane tracking, then use only the visible slice.
+	graphLines := BuildGraph(m.Commits)
+	maxGW := MaxGraphWidth(graphLines)
+
 	var s string
 	for fi := start; fi < end; fi++ {
 		i := indices[fi]
 		c := m.Commits[i]
 		selected := i == m.Cursor && m.Focused
+
+		// Graph prefix (pad to consistent width)
+		graphPrefix := ""
+		if i < len(graphLines) {
+			gw := lipgloss.Width(graphLines[i].Text)
+			graphPrefix = graphLines[i].Text + strings.Repeat(" ", maxGW-gw) + " "
+		}
 
 		hash := c.Hash
 		if len(hash) > 7 {
@@ -120,12 +132,12 @@ func (m CommitsModel) View() string {
 			aStyle := authorStyle.Reverse(true)
 			dStyle := commitDateStyle.Reverse(true)
 			sp := selectedStyle.Render(" ")
-			line = hStyle.Render(hash) + sp +
+			line = graphPrefix + hStyle.Render(hash) + sp +
 				aStyle.Render(authorInit) + sp +
 				selectedStyle.Render(msg) + sp +
 				dStyle.Render(relativeTime(c.Date))
 		} else {
-			line = fmt.Sprintf("%s %s %s %s",
+			line = graphPrefix + fmt.Sprintf("%s %s %s %s",
 				commitHashStyle.Render(hash),
 				authorStyle.Render(authorInit),
 				msg,

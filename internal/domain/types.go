@@ -37,6 +37,7 @@ type Commit struct {
 	Author  string    `json:"committer"`
 	Email   string    `json:"email"`
 	Date    time.Time `json:"date"`
+	Parents []string  // parent commit hashes (empty for root commit)
 }
 
 // Tag represents a dolt tag.

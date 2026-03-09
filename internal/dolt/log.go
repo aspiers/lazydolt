@@ -2,14 +2,21 @@ package dolt
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aspiers/lazydolt/internal/domain"
 )
 
 // Log returns the commit history, most recent first.
 // If limit is 0, all commits are returned.
+// Each commit includes its parent hashes from dolt_commit_ancestors.
 func (r *Runner) Log(limit int) ([]domain.Commit, error) {
-	query := "SELECT commit_hash, committer, email, date, message FROM dolt_log ORDER BY date DESC"
+	query := `SELECT l.commit_hash, l.committer, l.email, l.date, l.message,
+       GROUP_CONCAT(a.parent_hash ORDER BY a.parent_index SEPARATOR ',') as parents
+FROM dolt_log l
+LEFT JOIN dolt_commit_ancestors a ON l.commit_hash = a.commit_hash
+GROUP BY l.commit_hash, l.committer, l.email, l.date, l.message
+ORDER BY l.date DESC`
 	if limit > 0 {
 		query = fmt.Sprintf("%s LIMIT %d", query, limit)
 	}
@@ -27,6 +34,12 @@ func (r *Runner) Log(limit int) ([]domain.Commit, error) {
 		email, _ := row["email"].(string)
 		msg, _ := row["message"].(string)
 		dateStr, _ := row["date"].(string)
+		parentsStr, _ := row["parents"].(string)
+
+		var parents []string
+		if parentsStr != "" {
+			parents = strings.Split(parentsStr, ",")
+		}
 
 		commits = append(commits, domain.Commit{
 			Hash:    hash,
@@ -34,6 +47,7 @@ func (r *Runner) Log(limit int) ([]domain.Commit, error) {
 			Author:  author,
 			Email:   email,
 			Date:    parseDoltTime(dateStr),
+			Parents: parents,
 		})
 	}
 
