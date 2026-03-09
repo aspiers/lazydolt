@@ -74,10 +74,15 @@ func (l *LogView) RefreshContent() {
 		}
 
 		timeStr := entry.Time.Format("15:04:05")
+		if entry.Error {
+			sb.WriteString(logErrStyle.Render("✗"))
+		} else {
+			sb.WriteString(logOkStyle.Render("✓"))
+		}
+		sb.WriteString(" ")
 		sb.WriteString(logTimeStyle.Render(timeStr))
 		sb.WriteString(" ")
 		sb.WriteString(logCmdStyle.Render(entry.Command))
-		sb.WriteString("\n")
 
 		if entry.Error {
 			// Show error output (truncated to a few lines)
@@ -88,12 +93,9 @@ func (l *LogView) RefreshContent() {
 				lines = append(lines, fmt.Sprintf("  ... (%d more lines)", len(lines)-maxLines))
 			}
 			for _, line := range lines {
-				sb.WriteString(logErrStyle.Render("  " + line))
 				sb.WriteString("\n")
+				sb.WriteString(logErrStyle.Render("  " + line))
 			}
-		} else {
-			sb.WriteString(logOkStyle.Render("  ✓"))
-			sb.WriteString("\n")
 		}
 	}
 
