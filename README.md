@@ -27,7 +27,7 @@ Built with Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea) and
 - **Database export** — dump database to SQL/CSV/JSON with `E` key
 - **Configuration viewer/editor** — view and edit dolt config with `@` key
 - **Reflog** — view reference log with `l` key in commits panel
-- **Command log** — persistent log of all dolt CLI commands and errors
+- **Command log** — focusable, scrollable log of all dolt CLI commands and errors
 - **Search/filter** — filter tables, branches, and commits with `/`
 - **Mouse support** — click to focus panels and select items, scroll wheel navigation
 - **Zoomable layout** — zoom panels with `+` / `_` keys, adjustable column width with `<` / `>` / `=`
@@ -65,8 +65,8 @@ lazydolt /path/to/dolt/repo
 | Key | Action |
 |-----|--------|
 | `q` / `Ctrl+C` | Quit |
-| `Tab` / `Shift+Tab` | Next / previous panel (1-2-3-main) |
-| `1`-`3` | Jump to left panel |
+| `Tab` / `Shift+Tab` | Next / previous panel (1-2-3-4-5) |
+| `1`-`5` | Jump to panel by number |
 | `c` | Commit |
 | `+` / `_` | Zoom panel |
 | `<` / `>` | Narrow / widen left column |
@@ -88,12 +88,13 @@ lazydolt /path/to/dolt/repo
 | `Ctrl+L` | Redraw screen |
 | `?` | Toggle help |
 
-### Tables Panel
+### Tables Panel [1]
 
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Navigate |
 | `Space` | Stage/unstage table |
+| `[` / `]` | Cycle right-panel tab (Status/Browse/Schema) |
 | `a` | Stage all |
 | `A` | Unstage all |
 | `d` | Discard changes |
@@ -106,7 +107,7 @@ lazydolt /path/to/dolt/repo
 | `o` | Table operations (rename, copy, drop, export) |
 | `Enter` | Browse table data |
 
-### Branches Panel
+### Branches Panel [2]
 
 | Key | Action |
 |-----|--------|
@@ -122,7 +123,7 @@ lazydolt /path/to/dolt/repo
 | `D` | Delete branch/tag/remote |
 | `a` | Add remote |
 
-### Commits Panel
+### Commits Panel [3]
 
 | Key | Action |
 |-----|--------|
@@ -137,16 +138,25 @@ lazydolt /path/to/dolt/repo
 | `T` | Create tag at commit |
 | `l` | View reflog |
 
-### Main Panel
+### Main Panel [4]
 
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Scroll up/down |
+| `h` / `l` | Scroll left/right |
 | `PgUp` / `PgDn` | Page up/down |
 | `u` / `d` | Half page up/down |
-| `H` / `L` | Scroll left/right |
 | `s` | Toggle schema diff |
 | `w` | Toggle diff statistics |
+
+### Command Log [5]
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Scroll up/down |
+| `h` / `l` | Scroll left/right |
+| `PgUp` / `PgDn` | Page up/down |
+| `u` / `d` | Half page up/down |
 
 ## Architecture
 
