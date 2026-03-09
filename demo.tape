@@ -12,16 +12,16 @@ Output demo.gif
 Require lazydolt
 
 Set Shell "bash"
-Set FontSize 14
-Set FontFamily "JetBrains Mono,Fira Code,monospace"
-Set Width 1200
-Set Height 700
+Set FontSize 22
+Set FontFamily "SauceCodePro Nerd Font Mono,JetBrains Mono,Fira Code,monospace"
+Set Width 1800
+Set Height 1000
 Set Padding 12
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 75ms
 Set WindowBar Colorful
 Set BorderRadius 8
-Set Framerate 24
+Set Framerate 15
 Set LoopOffset 10%
 
 # --- Launch lazydolt ---
