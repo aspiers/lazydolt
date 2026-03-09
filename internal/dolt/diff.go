@@ -21,6 +21,41 @@ func (r *Runner) DiffText(table string, staged bool) (string, error) {
 	return out, nil
 }
 
+// DiffSchema returns the schema-only diff for a table.
+// If table is empty, diffs schemas for all changed tables.
+// If staged is true, shows staged schema changes.
+func (r *Runner) DiffSchema(table string, staged bool) (string, error) {
+	args := []string{"diff", "--schema"}
+	if staged {
+		args = append(args, "--staged")
+	}
+	if table != "" {
+		args = append(args, table)
+	}
+
+	out, err := r.Exec(args...)
+	if err != nil {
+		return "", err
+	}
+
+	return out, nil
+}
+
+// DiffSchemaRefs returns the schema-only diff between two refs for a table.
+func (r *Runner) DiffSchemaRefs(fromRef, toRef, table string) (string, error) {
+	args := []string{"diff", "--schema", fromRef, toRef}
+	if table != "" {
+		args = append(args, table)
+	}
+
+	out, err := r.Exec(args...)
+	if err != nil {
+		return "", err
+	}
+
+	return out, nil
+}
+
 // DiffStat returns diff statistics for a table.
 // If table is empty, returns stats for all changed tables.
 // If staged is true, shows stats for staged changes.

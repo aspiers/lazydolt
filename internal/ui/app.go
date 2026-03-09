@@ -75,6 +75,7 @@ type App struct {
 	// Main content
 	mainView    MainView
 	diffView    components.DiffView
+	schemaDiff  bool // toggle: show schema diff instead of data diff
 	schemaView  components.SchemaView
 	browserView components.BrowserView
 	logView     components.LogView
@@ -335,6 +336,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return a, tea.Quit
 		case "esc":
+			// Reset schema diff toggle
+			if a.schemaDiff {
+				a.schemaDiff = false
+				return a, a.reloadCurrentDiff()
+			}
 			// Exit commit detail mode first
 			if a.commitDetailHash != "" {
 				a.commitDetailHash = ""
@@ -467,6 +473,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, a.loadCommitTableDiffCurrent()
 				}
 				return a, nil
+			case "s":
+				// Toggle schema diff in commit detail mode
+				a.schemaDiff = !a.schemaDiff
+				return a, a.reloadCurrentDiff()
 			default:
 				// Ignore other keys in commit detail tables view
 				return a, nil
@@ -534,6 +544,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelMain:
+			// Toggle schema diff with 's' when viewing diff
+			if a.mainView == MainViewDiff && msg.String() == "s" {
+				a.schemaDiff = !a.schemaDiff
+				return a, a.reloadCurrentDiff()
+			}
 			// Forward key events to the active right-panel viewport.
 			switch a.mainView {
 			case MainViewDiff:
@@ -551,6 +566,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if a.focusedCursor() != prevCursor {
+			a.schemaDiff = false // reset schema diff toggle on navigation
 			cmds = append(cmds, a.autoPreview())
 		}
 
@@ -936,7 +952,7 @@ func (a App) View() string {
 			lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("[Enter] confirm  [Esc] clear")
 	} else if a.commitDetailHash != "" {
 		hints = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).
-			Render("j/k navigate tables | Esc back | ? help")
+			Render("j/k navigate tables | s schema diff | Esc back | ? help")
 	} else {
 		hints = components.RenderKeyHints(a.focused, a.width, a.tables.HasConflicts())
 		// Show active filter indicator
@@ -1454,6 +1470,7 @@ func (a *App) autoPreview() tea.Cmd {
 
 func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	runner := a.runner
+	schemaOnly := a.schemaDiff
 	label := table
 	if label == "" {
 		if staged {
@@ -1462,13 +1479,51 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 			label = "all unstaged"
 		}
 	}
+	if schemaOnly {
+		label += " (schema)"
+	}
 	return func() tea.Msg {
-		content, err := runner.DiffText(table, staged)
+		var content string
+		var err error
+		if schemaOnly {
+			content, err = runner.DiffSchema(table, staged)
+		} else {
+			content, err = runner.DiffText(table, staged)
+		}
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}
+		if schemaOnly && strings.TrimSpace(content) == "" {
+			content = "No schema changes"
+		}
 		return DiffContentMsg{Table: label, Content: content}
 	}
+}
+
+// reloadCurrentDiff reloads the diff for the currently selected table,
+// respecting the schemaDiff toggle.
+func (a *App) reloadCurrentDiff() tea.Cmd {
+	// In commit detail mode, reload the per-table diff
+	if a.commitDetailHash != "" && len(a.commitDetailTables) > 0 {
+		table := a.commitDetailTables[a.commitDetailCursor].TableName
+		header := a.commitHeader(a.commitDetailHash)
+		if a.schemaDiff {
+			return a.loadCommitSchemaDiff(a.commitDetailHash, table, header)
+		}
+		return a.loadCommitTableDiff(a.commitDetailHash, table, header)
+	}
+	// Normal mode
+	if a.focused == components.PanelTables || a.focused == components.PanelMain {
+		if a.tables.IsOnHeader() {
+			return a.loadDiff("", a.tables.SelectedIsStaged())
+		}
+		table := a.tables.SelectedTable()
+		if table == "" {
+			return a.loadDiff("", a.tables.SelectedIsStaged())
+		}
+		return a.loadDiff(table, a.tables.SelectedIsStaged())
+	}
+	return nil
 }
 
 func (a App) resolveConflicts(table string, ours bool) tea.Cmd {
@@ -1658,6 +1713,27 @@ func (a *App) loadCommitTableDiff(hash, table, header string) tea.Cmd {
 			content = header + "\n" + content
 		}
 		return DiffContentMsg{Table: table, Content: content}
+	}
+}
+
+// loadCommitSchemaDiff loads the schema-only diff for a table within a commit.
+func (a *App) loadCommitSchemaDiff(hash, table, header string) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		content, err := runner.DiffSchemaRefs(hash+"^", hash, table)
+		if err != nil {
+			content, err = runner.DiffSchemaRefs(hash, "", table)
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "No schema changes for " + table
+		}
+		if header != "" {
+			content = header + "\n" + content
+		}
+		return DiffContentMsg{Table: table + " (schema)", Content: content}
 	}
 }
 
@@ -2523,6 +2599,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},
 	{"Main Panel", "H/L", "Scroll left/right"},
+	{"Main Panel", "s", "Toggle schema diff"},
 }
 
 // helpSection groups filtered bindings by section name.
