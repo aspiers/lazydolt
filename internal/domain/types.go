@@ -123,3 +123,17 @@ type QueryResult struct {
 	Rows    []map[string]interface{} // each row as column -> value
 	Total   int                      // total row count (for pagination)
 }
+
+// ReflogEntry represents a single entry in the dolt reflog.
+type ReflogEntry struct {
+	Hash    string // commit hash
+	Ref     string // ref name (e.g. "main", "HEAD -> main")
+	Message string // commit message
+}
+
+// UndoEntry records a HEAD position before a mutation, allowing undo.
+type UndoEntry struct {
+	Branch      string // branch name at time of operation
+	Hash        string // HEAD hash before the operation
+	Description string // human-readable description (e.g. "commit: Fix bug")
+}

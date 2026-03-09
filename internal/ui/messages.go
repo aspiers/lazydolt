@@ -1,7 +1,11 @@
 // Package ui implements the Bubble Tea TUI for lazydolt.
 package ui
 
-import "github.com/aspiers/lazydolt/internal/domain"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aspiers/lazydolt/internal/domain"
+)
 
 // RefreshMsg triggers a reload of all data from dolt.
 type RefreshMsg struct{}
@@ -149,4 +153,29 @@ type BrowserDataMsg struct {
 	Rows    []map[string]interface{}
 	Total   int
 	Offset  int
+}
+
+// UndoSuccessMsg is sent when an undo operation succeeds.
+type UndoSuccessMsg struct{ Hash string }
+
+// RedoSuccessMsg is sent when a redo operation succeeds.
+type RedoSuccessMsg struct{ Hash string }
+
+// undoableResultMsg wraps a mutation result with pre-mutation state for undo.
+// This is unexported because it's only used internally by the App.
+type undoableResultMsg struct {
+	Inner tea.Msg          // the original success/error message
+	Entry domain.UndoEntry // pre-mutation state to push onto undo stack
+}
+
+// undoResultMsg is sent when an undo operation succeeds, carrying the
+// state to push onto the redo stack.
+type undoResultMsg struct {
+	RedoEntry domain.UndoEntry
+}
+
+// redoResultMsg is sent when a redo operation succeeds, carrying the
+// state to push onto the undo stack.
+type redoResultMsg struct {
+	UndoEntry domain.UndoEntry
 }

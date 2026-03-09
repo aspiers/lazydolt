@@ -184,6 +184,12 @@ type App struct {
 	helpFilter   textinput.Model
 	helpViewport viewport.Model
 
+	// Undo/redo
+	undoStack       []domain.UndoEntry // stack of pre-mutation states
+	redoStack       []domain.UndoEntry // stack of undone states for redo
+	showUndoConfirm bool               // true when undo confirmation dialog is shown
+	showRedoConfirm bool               // true when redo confirmation dialog is shown
+
 	// Layout
 	screenMode ScreenMode
 	leftRatio  int // left column width percentage (default 30)
@@ -301,6 +307,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Revert confirmation intercepts all keys when active
 		if a.showRevertConfirm {
 			return a.updateRevertConfirm(msg)
+		}
+		// Undo confirmation intercepts all keys when active
+		if a.showUndoConfirm {
+			return a.updateUndoConfirm(msg)
+		}
+		// Redo confirmation intercepts all keys when active
+		if a.showRedoConfirm {
+			return a.updateRedoConfirm(msg)
 		}
 		// Tag dialog intercepts all keys when active
 		if a.showTagDialog {
@@ -546,6 +560,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.syncHelpViewport()
 			a.helpViewport.GotoTop()
 			return a, textinput.Blink
+		case "z":
+			if len(a.undoStack) > 0 {
+				a.showUndoConfirm = true
+			} else {
+				a.errMsg = "Nothing to undo"
+			}
+			return a, nil
+		case "Z":
+			if len(a.redoStack) > 0 {
+				a.showRedoConfirm = true
+			} else {
+				a.errMsg = "Nothing to redo"
+			}
+			return a, nil
 		}
 
 		// Commit detail mode: intercept tables panel navigation
@@ -868,6 +896,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RenameBranchSuccessMsg:
 		a.showRenameBranch = false
 		a.renameBranchErr = ""
+		cmds = append(cmds, a.loadData())
+
+	// Undo/redo messages
+	case undoableResultMsg:
+		// A mutation succeeded with undo info — push to undo stack
+		a.undoStack = append(a.undoStack, msg.Entry)
+		a.redoStack = nil // clear redo on new mutation
+		// Re-dispatch the inner message
+		return a.Update(msg.Inner)
+
+	case undoResultMsg:
+		// Undo succeeded — push to redo stack and refresh
+		a.redoStack = append(a.redoStack, msg.RedoEntry)
+		cmds = append(cmds, a.loadData())
+
+	case redoResultMsg:
+		// Redo succeeded — push to undo stack and refresh
+		a.undoStack = append(a.undoStack, msg.UndoEntry)
 		cmds = append(cmds, a.loadData())
 
 	// Component messages that bubble up
@@ -1221,6 +1267,12 @@ func (a App) View() string {
 	}
 	if a.showRevertConfirm {
 		result = a.overlayRevertConfirm(result)
+	}
+	if a.showUndoConfirm {
+		result = a.overlayUndoConfirm(result)
+	}
+	if a.showRedoConfirm {
+		result = a.overlayRedoConfirm(result)
 	}
 	if a.showTagDialog {
 		result = a.overlayTagDialog(result)
@@ -2186,6 +2238,164 @@ func (a *App) fetchCmd() tea.Cmd {
 	}
 }
 
+// --- Undo/redo ---
+
+// undoableCmd wraps a mutation function so that the current HEAD position
+// is captured before the mutation runs. If the mutation succeeds, the
+// result is wrapped in an undoableResultMsg carrying the pre-mutation state.
+// If the mutation returns an ErrorMsg, it passes through unwrapped.
+func (a *App) undoableCmd(desc string, fn func() tea.Msg) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		hash, err := runner.HeadHash()
+		if err != nil {
+			// Can't capture undo state; run mutation anyway
+			return fn()
+		}
+		branch, _ := runner.CurrentBranch()
+
+		result := fn()
+
+		// Don't record undo for failed operations
+		if _, ok := result.(ErrorMsg); ok {
+			return result
+		}
+
+		return undoableResultMsg{
+			Inner: result,
+			Entry: domain.UndoEntry{
+				Branch:      branch,
+				Hash:        hash,
+				Description: desc,
+			},
+		}
+	}
+}
+
+func (a App) updateUndoConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		a.showUndoConfirm = false
+		return a, nil
+	case "y", "enter":
+		a.showUndoConfirm = false
+		if len(a.undoStack) == 0 {
+			return a, nil
+		}
+		entry := a.undoStack[len(a.undoStack)-1]
+		a.undoStack = a.undoStack[:len(a.undoStack)-1]
+		runner := a.runner
+		return a, func() tea.Msg {
+			// Capture current state for redo before resetting
+			curHash, _ := runner.HeadHash()
+			curBranch, _ := runner.CurrentBranch()
+
+			// Switch branch if needed
+			if entry.Branch != curBranch {
+				if err := runner.Checkout(entry.Branch); err != nil {
+					return ErrorMsg{Err: fmt.Errorf("undo: checkout %s: %w", entry.Branch, err)}
+				}
+			}
+
+			if err := runner.ResetHard(entry.Hash); err != nil {
+				return ErrorMsg{Err: fmt.Errorf("undo: reset to %s: %w", entry.Hash[:7], err)}
+			}
+
+			return undoResultMsg{
+				RedoEntry: domain.UndoEntry{
+					Branch:      curBranch,
+					Hash:        curHash,
+					Description: entry.Description,
+				},
+			}
+		}
+	}
+	return a, nil
+}
+
+func (a App) updateRedoConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		a.showRedoConfirm = false
+		return a, nil
+	case "y", "enter":
+		a.showRedoConfirm = false
+		if len(a.redoStack) == 0 {
+			return a, nil
+		}
+		entry := a.redoStack[len(a.redoStack)-1]
+		a.redoStack = a.redoStack[:len(a.redoStack)-1]
+		runner := a.runner
+		return a, func() tea.Msg {
+			// Capture current state for undo before resetting
+			curHash, _ := runner.HeadHash()
+			curBranch, _ := runner.CurrentBranch()
+
+			// Switch branch if needed
+			if entry.Branch != curBranch {
+				if err := runner.Checkout(entry.Branch); err != nil {
+					return ErrorMsg{Err: fmt.Errorf("redo: checkout %s: %w", entry.Branch, err)}
+				}
+			}
+
+			if err := runner.ResetHard(entry.Hash); err != nil {
+				return ErrorMsg{Err: fmt.Errorf("redo: reset to %s: %w", entry.Hash[:7], err)}
+			}
+
+			return redoResultMsg{
+				UndoEntry: domain.UndoEntry{
+					Branch:      curBranch,
+					Hash:        curHash,
+					Description: entry.Description,
+				},
+			}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayUndoConfirm(base string) string {
+	if len(a.undoStack) == 0 {
+		return base
+	}
+	entry := a.undoStack[len(a.undoStack)-1]
+	return a.overlayUndoRedoDialog(base, "Undo", entry)
+}
+
+func (a App) overlayRedoConfirm(base string) string {
+	if len(a.redoStack) == 0 {
+		return base
+	}
+	entry := a.redoStack[len(a.redoStack)-1]
+	return a.overlayUndoRedoDialog(base, "Redo", entry)
+}
+
+func (a App) overlayUndoRedoDialog(base, action string, entry domain.UndoEntry) string {
+	dialogW := 55
+	if a.width < 65 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	shortHash := entry.Hash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	content := titleStyle.Render(action) + "\n\n"
+	content += "  " + entry.Description + "\n"
+	content += "  Reset to " + shortHash + " on " + entry.Branch + "?\n\n"
+	content += "  [y/Enter] confirm  " + dimStyle.Render("— hard reset to previous state") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- SQL query dialog ---
 
 func (a *App) startSQL() tea.Cmd {
@@ -2339,21 +2549,21 @@ func (a App) updateCommitDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.amendMode = false
 		runner := a.runner
 		if amend {
-			return a, func() tea.Msg {
+			return a, a.undoableCmd("amend commit", func() tea.Msg {
 				hash, err := runner.CommitAmend(message)
 				if err != nil {
 					return ErrorMsg{Err: err}
 				}
 				return CommitSuccessMsg{Hash: hash}
-			}
+			})
 		}
-		return a, func() tea.Msg {
+		return a, a.undoableCmd("commit: "+message, func() tea.Msg {
 			hash, err := runner.Commit(message)
 			if err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return CommitSuccessMsg{Hash: hash}
-		}
+		})
 	}
 
 	var cmd tea.Cmd
@@ -2614,12 +2824,16 @@ func (a App) updateResetMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		a.showResetMenu = false
 		a.resetCommitHash = ""
-		return a, func() tea.Msg {
+		shortHash := hash
+		if len(shortHash) > 7 {
+			shortHash = shortHash[:7]
+		}
+		return a, a.undoableCmd("soft reset to "+shortHash, func() tea.Msg {
 			if err := runner.ResetSoft(hash); err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return ResetSuccessMsg{Mode: "soft"}
-		}
+		})
 	case "h":
 		// Show confirmation before hard reset
 		a.showResetMenu = false
@@ -2668,12 +2882,16 @@ func (a App) updateHardResetConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		a.showHardResetConfirm = false
 		a.resetCommitHash = ""
-		return a, func() tea.Msg {
+		shortHash := hash
+		if len(shortHash) > 7 {
+			shortHash = shortHash[:7]
+		}
+		return a, a.undoableCmd("hard reset to "+shortHash, func() tea.Msg {
 			if err := runner.ResetHard(hash); err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return ResetSuccessMsg{Mode: "hard"}
-		}
+		})
 	}
 	return a, nil
 }
@@ -2718,23 +2936,23 @@ func (a App) updateMergeMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		a.showMergeMenu = false
 		a.mergeBranch = ""
-		return a, func() tea.Msg {
+		return a, a.undoableCmd("merge "+branch, func() tea.Msg {
 			if _, err := runner.Merge(branch); errors.Is(err, dolt.ErrMergeConflict) {
 				return MergeConflictMsg{Branch: branch}
 			} else if err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return MergeSuccessMsg{Branch: branch}
-		}
+		})
 	case "s":
 		a.showMergeMenu = false
 		a.mergeBranch = ""
-		return a, func() tea.Msg {
+		return a, a.undoableCmd("squash merge "+branch, func() tea.Msg {
 			if _, err := runner.MergeSquash(branch); err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return MergeSuccessMsg{Branch: branch}
-		}
+		})
 	}
 	return a, nil
 }
@@ -2773,14 +2991,14 @@ func (a App) updateRebaseConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		a.showRebaseConfirm = false
 		a.rebaseBranch = ""
-		return a, func() tea.Msg {
+		return a, a.undoableCmd("rebase onto "+branch, func() tea.Msg {
 			if _, err := runner.Rebase(branch); errors.Is(err, dolt.ErrMergeConflict) {
 				return RebaseConflictMsg{Branch: branch}
 			} else if err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return RebaseSuccessMsg{Branch: branch}
-		}
+		})
 	}
 	return a, nil
 }
@@ -2819,14 +3037,18 @@ func (a App) updateCherryPickConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		a.showCherryPickConfirm = false
 		a.cherryPickHash = ""
-		return a, func() tea.Msg {
+		shortHash := hash
+		if len(shortHash) > 7 {
+			shortHash = shortHash[:7]
+		}
+		return a, a.undoableCmd("cherry-pick "+shortHash, func() tea.Msg {
 			if _, err := runner.CherryPick(hash); errors.Is(err, dolt.ErrMergeConflict) {
 				return CherryPickConflictMsg{Hash: hash}
 			} else if err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return CherryPickSuccessMsg{Hash: hash}
-		}
+		})
 	}
 	return a, nil
 }
@@ -2869,12 +3091,16 @@ func (a App) updateRevertConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		a.showRevertConfirm = false
 		a.revertHash = ""
-		return a, func() tea.Msg {
+		shortHash := hash
+		if len(shortHash) > 7 {
+			shortHash = shortHash[:7]
+		}
+		return a, a.undoableCmd("revert "+shortHash, func() tea.Msg {
 			if _, err := runner.Revert(hash); err != nil {
 				return ErrorMsg{Err: err}
 			}
 			return RevertSuccessMsg{Hash: hash}
-		}
+		})
 	}
 	return a, nil
 }
@@ -3513,6 +3739,8 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", ":", "Run SQL query"},
 	{"Global", "/", "Filter panel items"},
 	{"Global", "Esc", "Back / reset zoom / clear filter"},
+	{"Global", "z", "Undo last operation"},
+	{"Global", "Z", "Redo undone operation"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},
