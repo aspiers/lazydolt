@@ -174,6 +174,13 @@ type ConfigLoadedMsg struct {
 	Local  []dolt.ConfigEntry
 }
 
+// QueryDiffResultMsg carries the result of a query-diff comparison.
+type QueryDiffResultMsg struct {
+	Query1  string
+	Query2  string
+	Content string
+}
+
 // branchCommitsMsg carries commits loaded for a specific branch.
 type branchCommitsMsg struct {
 	Branch  string

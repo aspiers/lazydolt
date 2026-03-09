@@ -271,6 +271,15 @@ type App struct {
 	configEditScope bool // true=global, false=local
 	configEditKey   string
 
+	// Query diff
+	showQueryDiff     bool // true when query-diff input dialog is open
+	queryDiffStep     int  // 0 = entering query 1, 1 = entering query 2
+	queryDiffQuery1   string
+	queryDiffErr      string
+	queryDiffHistory1 []string // history for query 1
+	queryDiffHistory2 []string // history for query 2
+	queryDiffHistIdx  int      // -1 = current input, 0..N-1 = history
+
 	// Database export
 	showExportMenu   bool
 	exportMenuCursor int
@@ -450,6 +459,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
 			return a.updateSQLDialog(msg)
+		}
+		// Query diff dialog intercepts all keys when active
+		if a.showQueryDiff {
+			return a.updateQueryDiff(msg)
 		}
 		// Config edit dialog intercepts all keys when active
 		if a.showConfigEdit {
@@ -689,6 +702,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showExportMenu = true
 			a.exportMenuCursor = 0
 			return a, nil
+		case "Q":
+			return a, a.startQueryDiff()
 		case "z":
 			if len(a.undoStack) > 0 {
 				a.showUndoConfirm = true
@@ -1064,6 +1079,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Display SQL results in the diff view
 		title := fmt.Sprintf("SQL: %s", msg.Query)
 		a.diffView.SetContent(title, msg.Result)
+		a.mainView = MainViewDiff
+
+	case QueryDiffResultMsg:
+		content := msg.Content
+		if content == "" {
+			content = "(no differences)"
+		}
+		title := "Query Diff"
+		a.diffView.SetContent(title, content)
 		a.mainView = MainViewDiff
 
 	case StashSuccessMsg:
@@ -1567,6 +1591,9 @@ func (a App) View() string {
 	}
 	if a.showRenameBranch {
 		result = a.overlayRenameBranchDialog(result)
+	}
+	if a.showQueryDiff {
+		result = a.overlayQueryDiff(result)
 	}
 	if a.showConfig {
 		result = a.overlayConfigViewer(result)
@@ -4453,6 +4480,163 @@ func (a App) overlayConfigEdit(base string) string {
 	)
 }
 
+// --- Query diff ---
+
+func (a *App) startQueryDiff() tea.Cmd {
+	a.showQueryDiff = true
+	a.queryDiffStep = 0
+	a.queryDiffQuery1 = ""
+	a.queryDiffErr = ""
+	a.queryDiffHistIdx = -1
+	a.branchInput.Reset()
+	a.branchInput.Placeholder = "SELECT * FROM ..."
+	a.branchInput.Focus()
+	return textinput.Blink
+}
+
+func (a App) updateQueryDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if a.queryDiffStep == 1 {
+			// Go back to query 1
+			a.queryDiffStep = 0
+			a.queryDiffErr = ""
+			a.queryDiffHistIdx = -1
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "SELECT * FROM ..."
+			a.branchInput.SetValue(a.queryDiffQuery1)
+			a.branchInput.CursorEnd()
+			return a, nil
+		}
+		a.showQueryDiff = false
+		a.branchInput.Blur()
+		return a, nil
+	case "enter":
+		query := strings.TrimSpace(a.branchInput.Value())
+		if query == "" {
+			a.queryDiffErr = "Query cannot be empty"
+			return a, nil
+		}
+		if a.queryDiffStep == 0 {
+			// Save query 1, move to query 2
+			a.queryDiffQuery1 = query
+			a.queryDiffStep = 1
+			a.queryDiffErr = ""
+			a.queryDiffHistIdx = -1
+			// Add to query 1 history
+			if len(a.queryDiffHistory1) == 0 || a.queryDiffHistory1[len(a.queryDiffHistory1)-1] != query {
+				a.queryDiffHistory1 = append(a.queryDiffHistory1, query)
+			}
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "SELECT * FROM ..."
+			a.branchInput.Focus()
+			return a, textinput.Blink
+		}
+		// Step 1: execute query diff
+		a.showQueryDiff = false
+		a.branchInput.Blur()
+		// Add to query 2 history
+		if len(a.queryDiffHistory2) == 0 || a.queryDiffHistory2[len(a.queryDiffHistory2)-1] != query {
+			a.queryDiffHistory2 = append(a.queryDiffHistory2, query)
+		}
+		q1 := a.queryDiffQuery1
+		runner := a.runner
+		return a, func() tea.Msg {
+			result, err := runner.QueryDiff(q1, query)
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return QueryDiffResultMsg{Query1: q1, Query2: query, Content: result}
+		}
+	case "up":
+		hist := a.queryDiffHistory1
+		if a.queryDiffStep == 1 {
+			hist = a.queryDiffHistory2
+		}
+		if len(hist) > 0 {
+			if a.queryDiffHistIdx == -1 {
+				a.queryDiffHistIdx = len(hist) - 1
+			} else if a.queryDiffHistIdx > 0 {
+				a.queryDiffHistIdx--
+			}
+			a.branchInput.SetValue(hist[a.queryDiffHistIdx])
+			a.branchInput.CursorEnd()
+		}
+		return a, nil
+	case "down":
+		hist := a.queryDiffHistory1
+		if a.queryDiffStep == 1 {
+			hist = a.queryDiffHistory2
+		}
+		if a.queryDiffHistIdx >= 0 {
+			if a.queryDiffHistIdx < len(hist)-1 {
+				a.queryDiffHistIdx++
+				a.branchInput.SetValue(hist[a.queryDiffHistIdx])
+			} else {
+				a.queryDiffHistIdx = -1
+				a.branchInput.Reset()
+				a.branchInput.Placeholder = "SELECT * FROM ..."
+			}
+			a.branchInput.CursorEnd()
+		}
+		return a, nil
+	}
+
+	a.queryDiffErr = ""
+	var cmd tea.Cmd
+	a.branchInput, cmd = a.branchInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlayQueryDiff(base string) string {
+	dialogW := 70
+	if a.width < 80 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	step := "1"
+	if a.queryDiffStep == 1 {
+		step = "2"
+	}
+	content := titleStyle.Render("Query Diff — Query "+step) + "\n\n"
+	if a.queryDiffStep == 1 {
+		content += dimStyle.Render("  Query 1: "+a.queryDiffQuery1) + "\n\n"
+	}
+	content += a.branchInput.View() + "\n\n"
+	if a.queryDiffErr != "" {
+		content += errorStyle.Render(a.queryDiffErr) + "\n"
+	}
+	hint := "[Enter] "
+	if a.queryDiffStep == 0 {
+		hint += "next"
+	} else {
+		hint += "execute"
+	}
+	hint += "  [Esc] "
+	if a.queryDiffStep == 1 {
+		hint += "back"
+	} else {
+		hint += "cancel"
+	}
+	hist := a.queryDiffHistory1
+	if a.queryDiffStep == 1 {
+		hist = a.queryDiffHistory2
+	}
+	if len(hist) > 0 {
+		hint += "  [↑/↓] history"
+	}
+	content += dimStyle.Render(hint)
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Table rename/copy/export input dialog ---
 
 func (a App) updateTableInputDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -4948,6 +5132,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "R", "Refresh all data"},
 	{"Global", "S", "Stash changes / show stash list"},
 	{"Global", ":", "Run SQL query"},
+	{"Global", "Q", "Query diff (compare two queries)"},
 	{"Global", "/", "Filter panel items"},
 	{"Global", "Esc", "Back / reset zoom / clear filter"},
 	{"Global", "z", "Undo last operation"},
