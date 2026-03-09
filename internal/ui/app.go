@@ -571,6 +571,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.loadStashList()
 		case "y":
 			return a, a.copyToClipboard()
+		case "ctrl+l":
+			return a, func() tea.Msg { return tea.ClearScreen() }
 		case "?":
 			a.showHelp = true
 			a.helpFilter.Reset()
@@ -4008,6 +4010,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "z", "Undo last operation"},
 	{"Global", "Z", "Redo undone operation"},
 	{"Global", "y", "Copy selected item to clipboard"},
+	{"Global", "Ctrl+L", "Redraw screen"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},
