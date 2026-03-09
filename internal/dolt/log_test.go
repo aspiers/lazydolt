@@ -10,7 +10,7 @@ func TestLog_HasCommits(t *testing.T) {
 	runner, repo := newTestRunner(t)
 	testutil.PopulateTestData(repo) // creates 1 commit + init
 
-	commits, err := runner.Log("", 50)
+	commits, err := runner.Log("", 50, "")
 	if err != nil {
 		t.Fatalf("Log(50): %v", err)
 	}
@@ -23,7 +23,7 @@ func TestLog_Limit(t *testing.T) {
 	runner, repo := newTestRunner(t)
 	testutil.PopulateTestData(repo)
 
-	commits, err := runner.Log("", 1)
+	commits, err := runner.Log("", 1, "")
 	if err != nil {
 		t.Fatalf("Log(1): %v", err)
 	}
@@ -46,13 +46,13 @@ func TestLog_Branch(t *testing.T) {
 	repo.Exec("checkout", "main")
 
 	// Log for "feature" should include the feature branch commit
-	featureCommits, err := runner.Log("feature", 50)
+	featureCommits, err := runner.Log("feature", 50, "")
 	if err != nil {
 		t.Fatalf("Log('feature', 50): %v", err)
 	}
 
 	// Log for "" (current = main) should NOT include the feature commit
-	mainCommits, err := runner.Log("", 50)
+	mainCommits, err := runner.Log("", 50, "")
 	if err != nil {
 		t.Fatalf("Log('', 50): %v", err)
 	}
@@ -73,7 +73,7 @@ func TestLog_Order(t *testing.T) {
 	runner, repo := newTestRunner(t)
 	testutil.PopulateTestData(repo)
 
-	commits, err := runner.Log("", 50)
+	commits, err := runner.Log("", 50, "")
 	if err != nil {
 		t.Fatalf("Log(50): %v", err)
 	}

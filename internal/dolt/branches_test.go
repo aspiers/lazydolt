@@ -8,7 +8,7 @@ import (
 
 func TestBranches_DefaultBranch(t *testing.T) {
 	runner, _ := newTestRunner(t)
-	branches, err := runner.Branches()
+	branches, err := runner.Branches("")
 	if err != nil {
 		t.Fatalf("Branches(): %v", err)
 	}
@@ -33,7 +33,7 @@ func TestBranches_MultipleBranches(t *testing.T) {
 	testutil.PopulateTestData(repo)
 	repo.Exec("branch", "feature-test")
 
-	branches, err := runner.Branches()
+	branches, err := runner.Branches("")
 	if err != nil {
 		t.Fatalf("Branches(): %v", err)
 	}

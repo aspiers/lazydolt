@@ -57,6 +57,55 @@ const (
 	screenModeCount                    // sentinel for wrapping
 )
 
+// BranchSort controls how branches are ordered.
+type BranchSort int
+
+const (
+	BranchSortDate   BranchSort = iota // latest commit date (default)
+	BranchSortName                     // alphabetical by name
+	BranchSortAuthor                   // by latest committer
+	branchSortCount                    // sentinel
+)
+
+var branchSortLabels = [branchSortCount]string{"Date", "Name", "Author"}
+
+func (s BranchSort) orderBy() dolt.BranchOrderBy {
+	switch s {
+	case BranchSortName:
+		return dolt.BranchOrderByName
+	case BranchSortAuthor:
+		return dolt.BranchOrderByAuthor
+	default:
+		return dolt.BranchOrderByDate
+	}
+}
+
+// CommitSort controls how commits are ordered.
+type CommitSort int
+
+const (
+	CommitSortDate    CommitSort = iota // date descending (default)
+	CommitSortDateAsc                   // date ascending (oldest first)
+	CommitSortAuthor                    // by committer
+	CommitSortMessage                   // by message
+	commitSortCount                     // sentinel
+)
+
+var commitSortLabels = [commitSortCount]string{"Date (newest)", "Date (oldest)", "Author", "Message"}
+
+func (s CommitSort) orderBy() dolt.CommitOrderBy {
+	switch s {
+	case CommitSortDateAsc:
+		return dolt.CommitOrderByDateAsc
+	case CommitSortAuthor:
+		return dolt.CommitOrderByAuthor
+	case CommitSortMessage:
+		return dolt.CommitOrderByMessage
+	default:
+		return dolt.CommitOrderByDateDesc
+	}
+}
+
 // App is the root Bubble Tea model.
 type App struct {
 	runner     *dolt.Runner
@@ -199,6 +248,12 @@ type App struct {
 	redoStack       []domain.UndoEntry // stack of undone states for redo
 	showUndoConfirm bool               // true when undo confirmation dialog is shown
 	showRedoConfirm bool               // true when redo confirmation dialog is shown
+
+	// Sort options
+	branchSort     BranchSort
+	commitSort     CommitSort
+	showSortMenu   bool
+	sortMenuCursor int
 
 	// Layout
 	screenMode ScreenMode
@@ -343,6 +398,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.showTableDrop {
 			return a.updateTableDropConfirm(msg)
+		}
+		if a.showSortMenu {
+			return a.updateSortMenu(msg)
 		}
 		if a.showTableOpsMenu {
 			return a.updateTableOpsMenu(msg)
@@ -683,6 +741,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tables, cmd = a.tables.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelBranches:
+			if msg.String() == "s" {
+				a.showSortMenu = true
+				a.sortMenuCursor = int(a.branchSort)
+				return a, nil
+			}
 			if msg.String() == "r" {
 				if b := a.branches.SelectedBranch(); b != "" {
 					return a, a.startRenameBranch(b)
@@ -711,6 +774,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
 		case components.PanelCommits:
+			if msg.String() == "s" {
+				a.showSortMenu = true
+				a.sortMenuCursor = int(a.commitSort)
+				return a, nil
+			}
 			if msg.String() == "A" {
 				return a, a.startAmend()
 			}
@@ -1388,6 +1456,9 @@ func (a App) View() string {
 	if a.showDeleteTagConfirm {
 		result = a.overlayDeleteTagConfirm(result)
 	}
+	if a.showSortMenu {
+		result = a.overlaySortMenu(result)
+	}
 	if a.showTableOpsMenu {
 		result = a.overlayTableOpsMenu(result)
 	}
@@ -1754,8 +1825,9 @@ func (a *App) viewBranchCommits(branch string) tea.Cmd {
 	}
 	a.viewingBranch = branch
 	runner := a.runner
+	commitOrder := a.commitSort.orderBy()
 	return func() tea.Msg {
-		commits, err := runner.Log(branch, 50)
+		commits, err := runner.Log(branch, 50, commitOrder)
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("log %s: %w", branch, err)}
 		}
@@ -1765,6 +1837,8 @@ func (a *App) viewBranchCommits(branch string) tea.Cmd {
 
 func (a *App) loadData() tea.Cmd {
 	runner := a.runner
+	branchOrder := a.branchSort.orderBy()
+	commitOrder := a.commitSort.orderBy()
 	return func() tea.Msg {
 		type branchResult struct {
 			branch string
@@ -1807,11 +1881,11 @@ func (a *App) loadData() tea.Cmd {
 			tablesCh <- tablesResult{t, err}
 		}()
 		go func() {
-			br, err := runner.Branches()
+			br, err := runner.Branches(branchOrder)
 			branchesCh <- branchesResult{br, err}
 		}()
 		go func() {
-			c, err := runner.Log("", 50)
+			c, err := runner.Log("", 50, commitOrder)
 			commitsCh <- commitsResult{c, err}
 		}()
 		go func() {
@@ -3737,6 +3811,90 @@ func (a App) overlayTableOpsMenu(base string) string {
 	)
 }
 
+// --- Sort menu for branches and commits ---
+
+// sortMenuItems returns the labels for the current sort menu context.
+func (a App) sortMenuItems() []string {
+	if a.focused == components.PanelBranches {
+		items := make([]string, branchSortCount)
+		for i := range items {
+			items[i] = branchSortLabels[i]
+		}
+		return items
+	}
+	items := make([]string, commitSortCount)
+	for i := range items {
+		items[i] = commitSortLabels[i]
+	}
+	return items
+}
+
+// sortMenuTitle returns the title for the sort menu overlay.
+func (a App) sortMenuTitle() string {
+	if a.focused == components.PanelBranches {
+		return "Sort Branches"
+	}
+	return "Sort Commits"
+}
+
+func (a App) updateSortMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	items := a.sortMenuItems()
+	switch msg.String() {
+	case "esc":
+		a.showSortMenu = false
+		return a, nil
+	case "j", "down":
+		if a.sortMenuCursor < len(items)-1 {
+			a.sortMenuCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.sortMenuCursor > 0 {
+			a.sortMenuCursor--
+		}
+		return a, nil
+	case "enter", " ":
+		a.showSortMenu = false
+		if a.focused == components.PanelBranches {
+			a.branchSort = BranchSort(a.sortMenuCursor)
+		} else {
+			a.commitSort = CommitSort(a.sortMenuCursor)
+		}
+		return a, a.loadData()
+	}
+	return a, nil
+}
+
+func (a App) overlaySortMenu(base string) string {
+	dialogW := 40
+	if a.width < 50 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	menuSelectedStyle := lipgloss.NewStyle().Reverse(true)
+
+	items := a.sortMenuItems()
+	content := titleStyle.Render(a.sortMenuTitle()) + "\n\n"
+	for i, item := range items {
+		prefix := "  "
+		if i == a.sortMenuCursor {
+			prefix = "> "
+			content += menuSelectedStyle.Render(prefix+item) + "\n"
+		} else {
+			content += prefix + item + "\n"
+		}
+	}
+	content += "\n" + dimStyle.Render("[Enter] select  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Table rename/copy/export input dialog ---
 
 func (a App) updateTableInputDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -4260,10 +4418,12 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "e", "Rebase onto branch"},
 	{"Branches Panel", "n", "New branch"},
 	{"Branches Panel", "r", "Rename branch"},
+	{"Branches Panel", "s", "Sort branches"},
 	{"Branches Panel", "D", "Delete branch/tag/remote"},
 	{"Branches Panel", "a", "Add remote"},
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},
+	{"Commits Panel", "s", "Sort commits"},
 	{"Commits Panel", "A", "Amend last commit"},
 	{"Commits Panel", "g", "Reset to commit"},
 	{"Commits Panel", "C", "Cherry-pick commit"},

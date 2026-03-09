@@ -58,7 +58,7 @@ func TestCommit_CreatesCommit(t *testing.T) {
 	repo.SQL("CREATE TABLE commit_test (id INT PRIMARY KEY)")
 	repo.Exec("add", "-A")
 
-	beforeCommits, err := runner.Log("", 100)
+	beforeCommits, err := runner.Log("", 100, "")
 	if err != nil {
 		t.Fatalf("Log before commit: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestCommit_CreatesCommit(t *testing.T) {
 		t.Error("Commit() returned empty hash")
 	}
 
-	afterCommits, err := runner.Log("", 100)
+	afterCommits, err := runner.Log("", 100, "")
 	if err != nil {
 		t.Fatalf("Log after commit: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestNewBranch_Creates(t *testing.T) {
 		t.Fatalf("NewBranch(test-branch): %v", err)
 	}
 
-	branches, err := runner.Branches()
+	branches, err := runner.Branches("")
 	if err != nil {
 		t.Fatalf("Branches(): %v", err)
 	}
@@ -139,7 +139,7 @@ func TestDeleteBranch_Removes(t *testing.T) {
 		t.Fatalf("DeleteBranch(to-delete): %v", err)
 	}
 
-	branches, err := runner.Branches()
+	branches, err := runner.Branches("")
 	if err != nil {
 		t.Fatalf("Branches(): %v", err)
 	}

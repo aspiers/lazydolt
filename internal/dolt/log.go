@@ -7,12 +7,26 @@ import (
 	"github.com/aspiers/lazydolt/internal/domain"
 )
 
-// Log returns the commit history, most recent first.
+// CommitOrderBy specifies the ORDER BY clause for commit log queries.
+type CommitOrderBy string
+
+const (
+	CommitOrderByDateDesc CommitOrderBy = "l.date DESC"
+	CommitOrderByDateAsc  CommitOrderBy = "l.date ASC"
+	CommitOrderByAuthor   CommitOrderBy = "l.committer ASC, l.date DESC"
+	CommitOrderByMessage  CommitOrderBy = "l.message ASC, l.date DESC"
+)
+
+// Log returns the commit history sorted by the given order.
 // If branch is empty, the current branch's log is returned.
 // If branch is set, that branch's log is returned without checking it out.
 // If limit is 0, all commits are returned.
+// If order is empty, it defaults to CommitOrderByDateDesc.
 // Each commit includes its parent hashes from dolt_commit_ancestors.
-func (r *Runner) Log(branch string, limit int) ([]domain.Commit, error) {
+func (r *Runner) Log(branch string, limit int, order CommitOrderBy) ([]domain.Commit, error) {
+	if order == "" {
+		order = CommitOrderByDateDesc
+	}
 	logTable := "dolt_log"
 	if branch != "" {
 		logTable = fmt.Sprintf("dolt_log('%s')", branch)
@@ -22,7 +36,7 @@ func (r *Runner) Log(branch string, limit int) ([]domain.Commit, error) {
 FROM %s l
 LEFT JOIN dolt_commit_ancestors a ON l.commit_hash = a.commit_hash
 GROUP BY l.commit_hash, l.committer, l.email, l.date, l.message
-ORDER BY l.date DESC`, logTable)
+ORDER BY %s`, logTable, order)
 	if limit > 0 {
 		query = fmt.Sprintf("%s LIMIT %d", query, limit)
 	}
