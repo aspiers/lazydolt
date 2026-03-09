@@ -104,6 +104,10 @@ type App struct {
 	showCherryPickConfirm bool
 	cherryPickHash        string
 
+	// Revert confirmation
+	showRevertConfirm bool
+	revertHash        string
+
 	// Delete branch confirmation
 	showDeleteBranchConfirm bool
 	deleteBranchName        string
@@ -250,6 +254,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Cherry-pick confirmation intercepts all keys when active
 		if a.showCherryPickConfirm {
 			return a.updateCherryPickConfirm(msg)
+		}
+		// Revert confirmation intercepts all keys when active
+		if a.showRevertConfirm {
+			return a.updateRevertConfirm(msg)
 		}
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
@@ -555,6 +563,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 			}
+			if msg.String() == "t" {
+				if h := a.commits.SelectedHash(); h != "" {
+					a.showRevertConfirm = true
+					a.revertHash = h
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
@@ -650,6 +665,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case CherryPickConflictMsg:
 		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.loadData())
+
+	case RevertSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
 	case SQLResultMsg:
@@ -1018,6 +1036,9 @@ func (a App) View() string {
 	}
 	if a.showCherryPickConfirm {
 		result = a.overlayCherryPickConfirm(result)
+	}
+	if a.showRevertConfirm {
+		result = a.overlayRevertConfirm(result)
 	}
 	if a.showStashList {
 		result = a.overlayStashList(result)
@@ -2505,6 +2526,54 @@ func (a App) overlayCherryPickConfirm(base string) string {
 	)
 }
 
+// --- Revert confirmation ---
+
+func (a App) updateRevertConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	hash := a.revertHash
+	runner := a.runner
+	switch msg.String() {
+	case "esc":
+		a.showRevertConfirm = false
+		a.revertHash = ""
+		return a, nil
+	case "y", "enter":
+		a.showRevertConfirm = false
+		a.revertHash = ""
+		return a, func() tea.Msg {
+			if _, err := runner.Revert(hash); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return RevertSuccessMsg{Hash: hash}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayRevertConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	shortHash := a.revertHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	content := titleStyle.Render("Revert "+shortHash) + "\n\n"
+	content += "  Create a new commit undoing this commit's changes?\n\n"
+	content += "  [y/Enter] revert  " + dimStyle.Render("— undo commit changes") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Stash List ---
 
 func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
@@ -2671,6 +2740,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "A", "Amend last commit"},
 	{"Commits Panel", "g", "Reset to commit"},
 	{"Commits Panel", "C", "Cherry-pick commit"},
+	{"Commits Panel", "t", "Revert commit"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},

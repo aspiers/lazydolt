@@ -156,6 +156,12 @@ func (r *Runner) CherryPickAbort() error {
 	return err
 }
 
+// Revert creates a new commit that undoes the changes from the given commit.
+// Requires a clean working tree.
+func (r *Runner) Revert(hash string) (string, error) {
+	return r.Exec("revert", hash)
+}
+
 // mergeWithConflictDetection runs a merge and detects conflicts
 // by checking for "CONFLICT" in the stdout output.
 func (r *Runner) mergeWithConflictDetection(args ...string) (string, error) {

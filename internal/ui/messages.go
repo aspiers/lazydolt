@@ -56,6 +56,9 @@ type CherryPickSuccessMsg struct{ Hash string }
 // CherryPickConflictMsg is sent when a cherry-pick results in conflicts.
 type CherryPickConflictMsg struct{ Hash string }
 
+// RevertSuccessMsg is sent when a revert completes.
+type RevertSuccessMsg struct{ Hash string }
+
 // StashSuccessMsg is sent when changes are stashed.
 type StashSuccessMsg struct{}
 
