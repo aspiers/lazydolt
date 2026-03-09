@@ -25,6 +25,7 @@ const (
 	PanelBranches
 	PanelCommits
 	PanelMain // right-hand panel (diff/schema/browser)
+	PanelLog  // command log panel
 )
 
 // RenderKeyHints renders the hint bar for the given panel and width.
@@ -100,6 +101,13 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 	case PanelMain:
 		return append([]KeyHint{
 			{Key: "j/k", Desc: "scroll"},
+			{Key: "h/l", Desc: "h-scroll"},
+			{Key: "PgUp/Dn", Desc: "page"},
+		}, global...)
+	case PanelLog:
+		return append([]KeyHint{
+			{Key: "j/k", Desc: "scroll"},
+			{Key: "h/l", Desc: "h-scroll"},
 			{Key: "PgUp/Dn", Desc: "page"},
 		}, global...)
 	default:

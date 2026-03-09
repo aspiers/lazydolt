@@ -608,13 +608,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "tab":
 			a.cycleFocus()
-			if a.focused != components.PanelTables && a.focused != components.PanelMain {
+			if a.focused != components.PanelTables && a.focused != components.PanelMain && a.focused != components.PanelLog {
 				a.mainView = MainViewDiff
 			}
 			return a, a.autoPreview()
 		case "shift+tab":
 			a.cycleFocusReverse()
-			if a.focused != components.PanelTables && a.focused != components.PanelMain {
+			if a.focused != components.PanelTables && a.focused != components.PanelMain && a.focused != components.PanelLog {
 				a.mainView = MainViewDiff
 			}
 			return a, a.autoPreview()
@@ -634,6 +634,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setFocus(components.PanelCommits)
 			a.mainView = MainViewDiff
 			return a, a.autoPreview()
+		case "4":
+			a.setFocus(components.PanelMain)
+			return a, nil
+		case "5":
+			a.setFocus(components.PanelLog)
+			return a, nil
 		case "]":
 			if a.focused == components.PanelTables {
 				a.mainView = (a.mainView + 1) % mainViewCount
@@ -675,8 +681,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			return a, a.fetchCmd()
 		case "/":
-			// Only activate filter for left panels (not main)
-			if a.focused != components.PanelMain {
+			// Only activate filter for left panels (not main/log)
+			if a.focused != components.PanelMain && a.focused != components.PanelLog {
 				a.filterActive = true
 				a.filterInput.Reset()
 				a.filterInput.Focus()
@@ -924,6 +930,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.browserView, cmd = a.browserView.Update(msg)
 				cmds = append(cmds, cmd)
 			}
+		case components.PanelLog:
+			// Forward key events to the command log viewport.
+			var cmd tea.Cmd
+			a.logView, cmd = a.logView.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 		if a.focusedCursor() != prevCursor {
 			a.schemaDiff = false // reset schema diff toggle on navigation
@@ -1321,11 +1332,16 @@ func (a App) View() string {
 		a.logView.Entries = a.runner.CommandLog()
 		a.logView.RefreshContent()
 		a.logView.SetSize(mainInnerW, logPaneInnerHHalf)
-		logTitle := fmt.Sprintf("Command Log (%d)", len(a.logView.Entries))
-		logRendered := blurredBorder.Width(mainInnerW).Height(logPaneInnerHHalf).Render(a.logView.View())
+		logFocused := a.focused == components.PanelLog
+		logTitle := fmt.Sprintf("[5]─Command Log (%d)", len(a.logView.Entries))
+		logStyle := blurredBorder
+		if logFocused {
+			logStyle = focusedBorder
+		}
+		logRendered := logStyle.Width(mainInnerW).Height(logPaneInnerHHalf).Render(a.logView.View())
 		logLines := strings.Split(logRendered, "\n")
 		if len(logLines) > 0 {
-			logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, false)
+			logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, logFocused)
 		}
 		logBox := strings.Join(logLines, "\n")
 
@@ -1348,9 +1364,9 @@ func (a App) View() string {
 
 		// The focused panel gets more height; the other two share
 		// the remainder equally (like lazygit's auto-grow behavior).
-		// When PanelMain is focused, all three left panels split evenly.
+		// When PanelMain or PanelLog is focused, all three left panels split evenly.
 		var tablesH, branchesH, commitsH int
-		if a.focused == components.PanelMain {
+		if a.focused == components.PanelMain || a.focused == components.PanelLog {
 			each := availForPanels / 3
 			remainder := availForPanels - 3*each
 			tablesH = each + remainder // give remainder to first panel
@@ -1460,11 +1476,16 @@ func (a App) View() string {
 			a.logView.Entries = a.runner.CommandLog()
 			a.logView.RefreshContent()
 			a.logView.SetSize(mainInnerW, logPaneInnerH)
-			logTitle := fmt.Sprintf("Command Log (%d)", len(a.logView.Entries))
-			logRendered := blurredBorder.Width(mainInnerW).Height(logPaneInnerH).Render(a.logView.View())
+			logFocused := a.focused == components.PanelLog
+			logTitle := fmt.Sprintf("[5]─Command Log (%d)", len(a.logView.Entries))
+			logStyle := blurredBorder
+			if logFocused {
+				logStyle = focusedBorder
+			}
+			logRendered := logStyle.Width(mainInnerW).Height(logPaneInnerH).Render(a.logView.View())
 			logLines := strings.Split(logRendered, "\n")
 			if len(logLines) > 0 {
-				logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, false)
+				logLines[0] = buildTitleBorder(logTitle, mainInnerW+2, logFocused)
 			}
 			logBox := strings.Join(logLines, "\n")
 
@@ -1676,6 +1697,12 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 	case components.PanelCommits:
 		a.commits.Height = innerH
 		return a.panelBox(components.PanelCommits, width, innerH, a.commitsTitle(), content(a.commits.View()))
+	case components.PanelMain, components.PanelLog:
+		// In ScreenHalf: right-hand panels aren't rendered here (they go below),
+		// so fall through to show the tables panel in the top position.
+		a.tables.Height = innerH
+		title := fmt.Sprintf("[1]─%s", a.tabBar())
+		return a.panelBox(-1, width, innerH, title, content(a.tables.View()))
 	default:
 		// Status panel or unknown — show status
 		a.statusBar.Width = width - 2
@@ -1835,24 +1862,28 @@ func truncateToVisualHeight(content string, maxLines, width int) string {
 }
 
 func (a App) mainPanelTitle() string {
+	var title string
 	switch a.mainView {
 	case MainViewDiff:
 		if a.diffView.Table != "" {
-			return "Diff: " + a.diffView.Table
+			title = "Diff: " + a.diffView.Table
+		} else {
+			title = "Diff"
 		}
-		return "Diff"
 	case MainViewSchema:
 		if a.schemaView.Table != "" {
-			return "Schema: " + a.schemaView.Table
+			title = "Schema: " + a.schemaView.Table
+		} else {
+			title = "Schema"
 		}
-		return "Schema"
 	case MainViewBrowser:
 		if a.browserView.Table != "" {
-			return "Browse: " + a.browserView.Table
+			title = "Browse: " + a.browserView.Table
+		} else {
+			title = "Table Browser"
 		}
-		return "Table Browser"
 	}
-	return ""
+	return "[4]─" + title
 }
 
 func (a App) mainPanelContent() string {
@@ -1878,6 +1909,8 @@ func (a *App) cycleFocus() {
 	case components.PanelCommits:
 		a.focused = components.PanelMain
 	case components.PanelMain:
+		a.focused = components.PanelLog
+	case components.PanelLog:
 		a.focused = components.PanelTables
 	}
 	a.syncFocus()
@@ -1886,13 +1919,15 @@ func (a *App) cycleFocus() {
 func (a *App) cycleFocusReverse() {
 	switch a.focused {
 	case components.PanelTables:
-		a.focused = components.PanelMain
+		a.focused = components.PanelLog
 	case components.PanelBranches:
 		a.focused = components.PanelTables
 	case components.PanelCommits:
 		a.focused = components.PanelBranches
 	case components.PanelMain:
 		a.focused = components.PanelCommits
+	case components.PanelLog:
+		a.focused = components.PanelMain
 	}
 	a.syncFocus()
 }
@@ -4961,7 +4996,7 @@ func (a App) mousePanelHitNormal(x, y int) (components.Panel, int) {
 	// Compute panel heights (same logic as View)
 	availForPanels := a.height - 1 - (statusInnerH + borderH) - 3*borderH
 	var tablesH, branchesH, commitsH int
-	if a.focused == components.PanelMain {
+	if a.focused == components.PanelMain || a.focused == components.PanelLog {
 		each := availForPanels / 3
 		remainder := availForPanels - 3*each
 		tablesH = each + remainder
@@ -5002,8 +5037,21 @@ func (a App) mousePanelHitNormal(x, y int) (components.Panel, int) {
 		}
 	}
 
-	// Right column
-	return components.PanelMain, y - 1 // -1 for top border
+	// Right column: main panel + log panel stacked vertically.
+	// Total left column outer height determines the right column total.
+	leftOuterH := (statusInnerH + borderH) + (tablesH + borderH) + (branchesH + borderH) + (commitsH + borderH)
+	mainInnerH := leftOuterH - borderH
+	const logPaneInnerH = 5
+	mainContentH := mainInnerH - logPaneInnerH - borderH
+	if mainContentH < 4 {
+		mainContentH = 4
+	}
+	// Main panel occupies rows 0..mainContentH+borderH-1
+	mainOuterH := mainContentH + borderH
+	if y < mainOuterH {
+		return components.PanelMain, y - 1 // -1 for top border
+	}
+	return components.PanelLog, y - mainOuterH - 1
 }
 
 // mousePanelHitHalf handles the ScreenHalf vertical split layout.
@@ -5012,7 +5060,25 @@ func (a App) mousePanelHitHalf(x, y int) (components.Panel, int) {
 	if y < topH {
 		return a.focused, y - 1
 	}
-	return components.PanelMain, y - topH - 1
+
+	// Bottom area is split between main panel and log panel.
+	const borderH = 2
+	const logPaneInnerHHalf = 4
+	botOuterH := a.height - 1 - topH
+	botInnerH := botOuterH - borderH
+	if botInnerH < 2 {
+		botInnerH = 2
+	}
+	mainContentH := botInnerH - logPaneInnerHHalf - borderH
+	if mainContentH < 3 {
+		mainContentH = 3
+	}
+	mainOuterH := mainContentH + borderH
+	relY := y - topH
+	if relY < mainOuterH {
+		return components.PanelMain, relY - 1
+	}
+	return components.PanelLog, relY - mainOuterH - 1
 }
 
 // mousePanelHitFullscreen handles the ScreenFullscreen layout.
@@ -5076,6 +5142,11 @@ func (a App) handleMouseWheel(panel components.Panel, msg tea.MouseMsg) (tea.Mod
 			a.browserView, cmd = a.browserView.Update(msg)
 		}
 		return a, cmd
+
+	case components.PanelLog:
+		var cmd tea.Cmd
+		a.logView, cmd = a.logView.Update(msg)
+		return a, cmd
 	}
 	return a, nil
 }
@@ -5113,6 +5184,8 @@ func (a App) handleMouseClick(panel components.Panel, innerRow int) (tea.Model, 
 		}
 	case components.PanelMain:
 		// Click on main panel just focuses it
+	case components.PanelLog:
+		// Click on log panel just focuses it
 	}
 	return a, cmd
 }
@@ -5131,8 +5204,8 @@ func abs(x int) int {
 // an empty key.
 var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "q / Ctrl+C", "Quit"},
-	{"Global", "Tab / S-Tab", "Next / previous panel (1-2-3-main)"},
-	{"Global", "1-3", "Jump to left panel"},
+	{"Global", "Tab / S-Tab", "Next / previous panel (1-2-3-4-5)"},
+	{"Global", "1-5", "Jump to panel by number"},
 	{"Global", "c", "Commit"},
 	{"Global", "+ / _", "Zoom panel"},
 	{"Global", "< / >", "Narrow / widen left column"},
@@ -5187,12 +5260,16 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "t", "Revert commit"},
 	{"Commits Panel", "T", "Create tag at commit"},
 	{"Commits Panel", "l", "View reflog"},
-	{"Main Panel", "j/k", "Scroll up/down"},
-	{"Main Panel", "PgUp/PgDn", "Page up/down"},
-	{"Main Panel", "u/d", "Half page up/down"},
-	{"Main Panel", "H/L", "Scroll left/right"},
-	{"Main Panel", "s", "Toggle schema diff"},
-	{"Main Panel", "w", "Toggle diff statistics"},
+	{"Main Panel [4]", "j/k", "Scroll up/down"},
+	{"Main Panel [4]", "h/l", "Scroll left/right"},
+	{"Main Panel [4]", "PgUp/PgDn", "Page up/down"},
+	{"Main Panel [4]", "u/d", "Half page up/down"},
+	{"Main Panel [4]", "s", "Toggle schema diff"},
+	{"Main Panel [4]", "w", "Toggle diff statistics"},
+	{"Command Log [5]", "j/k", "Scroll up/down"},
+	{"Command Log [5]", "h/l", "Scroll left/right"},
+	{"Command Log [5]", "PgUp/PgDn", "Page up/down"},
+	{"Command Log [5]", "u/d", "Half page up/down"},
 }
 
 // helpSection groups filtered bindings by section name.

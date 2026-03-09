@@ -29,6 +29,7 @@ type LogView struct {
 func NewLogView(width, height int) LogView {
 	vp := viewport.New(width, height)
 	vp.SetContent("No commands executed yet")
+	vp.SetHorizontalStep(4)
 	return LogView{
 		Viewport: vp,
 		Ready:    true,
