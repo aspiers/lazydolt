@@ -126,6 +126,15 @@ type TableDropSuccessMsg struct{ Name string }
 // TableExportSuccessMsg is sent when a table is exported.
 type TableExportSuccessMsg struct{ Table, Path string }
 
+// RebaseSuccessMsg is sent when a rebase completes successfully.
+type RebaseSuccessMsg struct{ Branch string }
+
+// RebaseConflictMsg is sent when a rebase results in conflicts.
+type RebaseConflictMsg struct{ Branch string }
+
+// RebaseAbortMsg is sent when a rebase is aborted.
+type RebaseAbortMsg struct{}
+
 // CommitDetailMsg carries the diff stat for a commit's changed tables.
 type CommitDetailMsg struct {
 	Hash   string

@@ -101,6 +101,10 @@ type App struct {
 	showMergeMenu bool
 	mergeBranch   string
 
+	// Rebase confirmation
+	showRebaseConfirm bool
+	rebaseBranch      string
+
 	// Cherry-pick confirmation
 	showCherryPickConfirm bool
 	cherryPickHash        string
@@ -285,6 +289,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Merge menu intercepts all keys when active
 		if a.showMergeMenu {
 			return a.updateMergeMenu(msg)
+		}
+		// Rebase confirmation intercepts all keys when active
+		if a.showRebaseConfirm {
+			return a.updateRebaseConfirm(msg)
 		}
 		// Cherry-pick confirmation intercepts all keys when active
 		if a.showCherryPickConfirm {
@@ -624,6 +632,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 			}
+			if msg.String() == "e" {
+				if b := a.branches.SelectedBranch(); b != "" {
+					a.showRebaseConfirm = true
+					a.rebaseBranch = b
+					return a, nil
+				}
+			}
 			var cmd tea.Cmd
 			a.branches, cmd = a.branches.Update(msg)
 			cmds = append(cmds, cmd)
@@ -770,6 +785,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case MergeAbortMsg:
+		cmds = append(cmds, a.loadData())
+
+	case RebaseSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case RebaseConflictMsg:
+		a.setFocus(components.PanelTables)
+		cmds = append(cmds, a.loadData())
+
+	case RebaseAbortMsg:
 		cmds = append(cmds, a.loadData())
 
 	case CherryPickSuccessMsg:
@@ -1187,6 +1212,9 @@ func (a App) View() string {
 	}
 	if a.showMergeMenu {
 		result = a.overlayMergeMenu(result)
+	}
+	if a.showRebaseConfirm {
+		result = a.overlayRebaseConfirm(result)
 	}
 	if a.showCherryPickConfirm {
 		result = a.overlayCherryPickConfirm(result)
@@ -2732,6 +2760,52 @@ func (a App) overlayMergeMenu(base string) string {
 	)
 }
 
+// --- Rebase confirmation ---
+
+func (a App) updateRebaseConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	branch := a.rebaseBranch
+	runner := a.runner
+	switch msg.String() {
+	case "esc":
+		a.showRebaseConfirm = false
+		a.rebaseBranch = ""
+		return a, nil
+	case "y", "enter":
+		a.showRebaseConfirm = false
+		a.rebaseBranch = ""
+		return a, func() tea.Msg {
+			if _, err := runner.Rebase(branch); errors.Is(err, dolt.ErrMergeConflict) {
+				return RebaseConflictMsg{Branch: branch}
+			} else if err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return RebaseSuccessMsg{Branch: branch}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayRebaseConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Rebase onto "+a.rebaseBranch) + "\n\n"
+	content += "  Rebase current branch onto " + a.rebaseBranch + "?\n\n"
+	content += "  [y/Enter] rebase  " + dimStyle.Render("— reapply commits on top") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Cherry-pick confirmation ---
 
 func (a App) updateCherryPickConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -3455,6 +3529,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "j/k", "Navigate"},
 	{"Branches Panel", "Enter", "Checkout branch"},
 	{"Branches Panel", "m", "Merge into current"},
+	{"Branches Panel", "e", "Rebase onto branch"},
 	{"Branches Panel", "n", "New branch"},
 	{"Branches Panel", "r", "Rename branch"},
 	{"Branches Panel", "D", "Delete branch/tag/remote"},
