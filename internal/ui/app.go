@@ -602,7 +602,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				table := a.tables.SelectedTable()
 				if table != "" {
 					a.showTableOpsMenu = true
-					a.tableOpsTable = table
+					// Use current name for renamed tables ("old -> new")
+					_, a.tableOpsTable, _ = renamedTableParts(table)
 					a.tableOpsCursor = 0
 					return a, nil
 				}
@@ -1728,10 +1729,22 @@ func (a *App) autoPreview() tea.Cmd {
 	}
 }
 
+// renamedTableParts splits a renamed table name "old -> new" into its parts.
+// Returns (oldName, newName, true) if renamed, or (table, table, false) if not.
+func renamedTableParts(table string) (old, new string, renamed bool) {
+	if parts := strings.SplitN(table, " -> ", 2); len(parts) == 2 {
+		return parts[0], parts[1], true
+	}
+	return table, table, false
+}
+
 func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	runner := a.runner
 	schemaOnly := a.schemaDiff
 	label := table
+	// Renamed tables appear as "old -> new" in dolt_status;
+	// extract the old name for the diff command (either name works).
+	diffTable, _, _ := renamedTableParts(table)
 	if label == "" {
 		if staged {
 			label = "all staged"
@@ -1746,9 +1759,9 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 		var content string
 		var err error
 		if schemaOnly {
-			content, err = runner.DiffSchema(table, staged)
+			content, err = runner.DiffSchema(diffTable, staged)
 		} else {
-			content, err = runner.DiffText(table, staged)
+			content, err = runner.DiffText(diffTable, staged)
 		}
 		if err != nil {
 			return ErrorMsg{Err: err}
@@ -1866,8 +1879,10 @@ func (a *App) loadConflicts(table string) tea.Cmd {
 
 func (a *App) loadSchema(table string) tea.Cmd {
 	runner := a.runner
+	// Use the new name for renamed tables ("old -> new")
+	_, queryTable, _ := renamedTableParts(table)
 	return func() tea.Msg {
-		schema, err := runner.Schema(table)
+		schema, err := runner.Schema(queryTable)
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}
@@ -1888,8 +1903,10 @@ func (a *App) loadReflog() tea.Cmd {
 
 func (a *App) loadBlame(table string) tea.Cmd {
 	runner := a.runner
+	// Use the new name for renamed tables ("old -> new")
+	_, queryTable, _ := renamedTableParts(table)
 	return func() tea.Msg {
-		output, err := runner.Blame(table)
+		output, err := runner.Blame(queryTable)
 		if err != nil {
 			return ErrorMsg{Err: err}
 		}
@@ -1898,7 +1915,9 @@ func (a *App) loadBlame(table string) tea.Cmd {
 }
 
 func (a *App) loadTableData(table string) tea.Cmd {
-	return a.loadTableDataPage(table, 0)
+	// Use the new name for renamed tables ("old -> new")
+	_, queryTable, _ := renamedTableParts(table)
+	return a.loadTableDataPage(queryTable, 0)
 }
 
 func (a *App) loadTableDataPage(table string, offset int) tea.Cmd {
