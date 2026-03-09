@@ -72,6 +72,22 @@ func (r *Runner) DiffRefs(fromRef, toRef, table string) (string, error) {
 	return out, nil
 }
 
+// DiffStatRefs returns diff statistics between two refs.
+// If table is empty, returns stats for all changed tables.
+func (r *Runner) DiffStatRefs(fromRef, toRef, table string) (string, error) {
+	args := []string{"diff", "--stat", fromRef, toRef}
+	if table != "" {
+		args = append(args, table)
+	}
+
+	out, err := r.Exec(args...)
+	if err != nil {
+		return "", err
+	}
+
+	return out, nil
+}
+
 // DiffStat returns diff statistics for a table.
 // If table is empty, returns stats for all changed tables.
 // If staged is true, shows stats for staged changes.

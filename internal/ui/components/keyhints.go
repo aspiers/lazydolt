@@ -60,6 +60,7 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 			{Key: "[/]", Desc: "tab"},
 			{Key: "a/A", Desc: "stage/unstage all"},
 			{Key: "d", Desc: "discard"},
+			{Key: "w", Desc: "stat"},
 			{Key: "b", Desc: "blame"},
 			{Key: "o", Desc: "table ops"},
 		}

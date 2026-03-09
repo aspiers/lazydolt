@@ -78,6 +78,7 @@ type App struct {
 	mainView    MainView
 	diffView    components.DiffView
 	schemaDiff  bool // toggle: show schema diff instead of data diff
+	diffStat    bool // toggle: show diff statistics instead of full diff
 	blameMode   bool // true when showing blame output
 	schemaView  components.SchemaView
 	browserView components.BrowserView
@@ -449,9 +450,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.blameMode = false
 				return a, a.autoPreview()
 			}
-			// Reset schema diff toggle
-			if a.schemaDiff {
+			// Reset schema diff / diff stat toggles
+			if a.schemaDiff || a.diffStat {
 				a.schemaDiff = false
+				a.diffStat = false
 				return a, a.reloadCurrentDiff()
 			}
 			// Exit commit detail mode first
@@ -610,6 +612,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "s":
 				// Toggle schema diff in commit detail mode
 				a.schemaDiff = !a.schemaDiff
+				a.diffStat = false
+				return a, a.reloadCurrentDiff()
+			case "w":
+				// Toggle diff stat in commit detail mode
+				a.diffStat = !a.diffStat
+				a.schemaDiff = false
 				return a, a.reloadCurrentDiff()
 			default:
 				// Ignore other keys in commit detail tables view
@@ -622,6 +630,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch a.focused {
 		case components.PanelTables:
 			switch msg.String() {
+			case "w":
+				if a.mainView == MainViewDiff {
+					a.diffStat = !a.diffStat
+					a.schemaDiff = false
+					return a, a.reloadCurrentDiff()
+				}
 			case "O":
 				if a.tables.SelectedIsConflict() {
 					table := a.tables.SelectedTable()
@@ -739,6 +753,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle schema diff with 's' when viewing diff
 			if a.mainView == MainViewDiff && msg.String() == "s" {
 				a.schemaDiff = !a.schemaDiff
+				a.diffStat = false
+				return a, a.reloadCurrentDiff()
+			}
+			// Toggle diff stat with 'w' when viewing diff
+			if a.mainView == MainViewDiff && msg.String() == "w" {
+				a.diffStat = !a.diffStat
+				a.schemaDiff = false
 				return a, a.reloadCurrentDiff()
 			}
 			// Forward key events to the active right-panel viewport.
@@ -759,6 +780,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.focusedCursor() != prevCursor {
 			a.schemaDiff = false // reset schema diff toggle on navigation
+			a.diffStat = false   // reset diff stat toggle on navigation
 			a.blameMode = false  // reset blame mode on navigation
 			cmds = append(cmds, a.autoPreview())
 		}
@@ -1926,6 +1948,7 @@ func renamedTableParts(table string) (old, new string, renamed bool) {
 func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	runner := a.runner
 	schemaOnly := a.schemaDiff
+	statOnly := a.diffStat
 	label := table
 	// Renamed tables appear as "old -> new" in dolt_status;
 	// extract the old name for the diff command (either name works).
@@ -1939,11 +1962,15 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 	}
 	if schemaOnly {
 		label += " (schema)"
+	} else if statOnly {
+		label += " (stat)"
 	}
 	return func() tea.Msg {
 		var content string
 		var err error
-		if schemaOnly {
+		if statOnly {
+			content, err = runner.DiffStat(diffTable, staged)
+		} else if schemaOnly {
 			content, err = runner.DiffSchema(diffTable, staged)
 		} else {
 			content, err = runner.DiffText(diffTable, staged)
@@ -1954,6 +1981,9 @@ func (a *App) loadDiff(table string, staged bool) tea.Cmd {
 		if schemaOnly && strings.TrimSpace(content) == "" {
 			content = "No schema changes"
 		}
+		if statOnly && strings.TrimSpace(content) == "" {
+			content = "No changes"
+		}
 		return DiffContentMsg{Table: label, Content: content}
 	}
 }
@@ -1963,10 +1993,13 @@ func (a *App) loadBranchDiff(branch string) tea.Cmd {
 	runner := a.runner
 	current := a.currentBranch
 	schemaOnly := a.schemaDiff
+	statOnly := a.diffStat
 	return func() tea.Msg {
 		var content string
 		var err error
-		if schemaOnly {
+		if statOnly {
+			content, err = runner.DiffStatRefs(current, branch, "")
+		} else if schemaOnly {
 			content, err = runner.DiffSchemaRefs(current, branch, "")
 		} else {
 			content, err = runner.DiffRefs(current, branch, "")
@@ -1980,18 +2013,23 @@ func (a *App) loadBranchDiff(branch string) tea.Cmd {
 		label := current + ".." + branch
 		if schemaOnly {
 			label += " (schema)"
+		} else if statOnly {
+			label += " (stat)"
 		}
 		return DiffContentMsg{Table: label, Content: content}
 	}
 }
 
 // reloadCurrentDiff reloads the diff for the currently selected table,
-// respecting the schemaDiff toggle.
+// respecting the schemaDiff and diffStat toggles.
 func (a *App) reloadCurrentDiff() tea.Cmd {
 	// In commit detail mode, reload the per-table diff
 	if a.commitDetailHash != "" && len(a.commitDetailTables) > 0 {
 		table := a.commitDetailTables[a.commitDetailCursor].TableName
 		header := a.commitHeader(a.commitDetailHash)
+		if a.diffStat {
+			return a.loadCommitStatDiff(a.commitDetailHash, table, header)
+		}
 		if a.schemaDiff {
 			return a.loadCommitSchemaDiff(a.commitDetailHash, table, header)
 		}
@@ -2247,6 +2285,27 @@ func (a *App) loadCommitSchemaDiff(hash, table, header string) tea.Cmd {
 			content = header + "\n" + content
 		}
 		return DiffContentMsg{Table: table + " (schema)", Content: content}
+	}
+}
+
+// loadCommitStatDiff loads the diff statistics for a table within a commit.
+func (a *App) loadCommitStatDiff(hash, table, header string) tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		content, err := runner.DiffStatRefs(hash+"^", hash, table)
+		if err != nil {
+			content, err = runner.DiffStatRefs(hash, "", table)
+			if err != nil {
+				return ErrorMsg{Err: err}
+			}
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "No changes for " + table
+		}
+		if header != "" {
+			content = header + "\n" + content
+		}
+		return DiffContentMsg{Table: table + " (stat)", Content: content}
 	}
 }
 
@@ -3959,6 +4018,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Tables Panel", "T", "Resolve conflicts (theirs)"},
 	{"Tables Panel", "X", "Abort merge"},
 	{"Tables Panel", "s", "View schema"},
+	{"Tables Panel", "w", "Toggle diff statistics"},
 	{"Tables Panel", "b", "View blame"},
 	{"Tables Panel", "o", "Table operations (rename, copy, drop, export)"},
 	{"Tables Panel", "Enter", "Browse table data"},
@@ -3985,6 +4045,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Main Panel", "u/d", "Half page up/down"},
 	{"Main Panel", "H/L", "Scroll left/right"},
 	{"Main Panel", "s", "Toggle schema diff"},
+	{"Main Panel", "w", "Toggle diff statistics"},
 }
 
 // helpSection groups filtered bindings by section name.
