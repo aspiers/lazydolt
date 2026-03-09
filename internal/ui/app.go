@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -566,6 +567,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.stashCmd()
 			}
 			return a, a.loadStashList()
+		case "y":
+			return a, a.copyToClipboard()
 		case "?":
 			a.showHelp = true
 			a.helpFilter.Reset()
@@ -2273,6 +2276,46 @@ func (a *App) commitHeader(hash string) string {
 	return ""
 }
 
+// --- Clipboard ---
+
+// copyToClipboard copies the relevant value from the focused panel to the
+// system clipboard and shows a flash message.
+func (a *App) copyToClipboard() tea.Cmd {
+	var value string
+	switch a.focused {
+	case components.PanelTables:
+		value = a.tables.SelectedTable()
+	case components.PanelBranches:
+		// Copy whichever item type is selected: branch, tag, or remote
+		if v := a.branches.SelectedBranch(); v != "" {
+			value = v
+		} else if v := a.branches.SelectedTag(); v != "" {
+			value = v
+		} else if v := a.branches.SelectedRemote(); v != "" {
+			value = v
+		}
+	case components.PanelCommits:
+		value = a.commits.SelectedHash()
+	case components.PanelMain:
+		// Nothing obvious to copy from the main viewport
+	}
+
+	if value == "" {
+		return a.setFlashError("Nothing to copy")
+	}
+
+	if err := clipboard.WriteAll(value); err != nil {
+		return a.setFlashError("Clipboard: " + err.Error())
+	}
+
+	// Truncate long values for the flash message
+	display := value
+	if len(display) > 40 {
+		display = display[:37] + "..."
+	}
+	return a.setFlashSuccess("Copied: " + display)
+}
+
 // --- Flash messages ---
 
 const flashDuration = 5 * time.Second
@@ -3905,6 +3948,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "Esc", "Back / reset zoom / clear filter"},
 	{"Global", "z", "Undo last operation"},
 	{"Global", "Z", "Redo undone operation"},
+	{"Global", "y", "Copy selected item to clipboard"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
 	{"Tables Panel", "Space", "Stage/unstage table"},
