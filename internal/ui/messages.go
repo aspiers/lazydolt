@@ -4,6 +4,7 @@ package ui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aspiers/lazydolt/internal/dolt"
 	"github.com/aspiers/lazydolt/internal/domain"
 )
 
@@ -160,6 +161,12 @@ type UndoSuccessMsg struct{ Hash string }
 
 // RedoSuccessMsg is sent when a redo operation succeeds.
 type RedoSuccessMsg struct{ Hash string }
+
+// ConfigLoadedMsg carries config entries to display.
+type ConfigLoadedMsg struct {
+	Global []dolt.ConfigEntry
+	Local  []dolt.ConfigEntry
+}
 
 // branchCommitsMsg carries commits loaded for a specific branch.
 type branchCommitsMsg struct {

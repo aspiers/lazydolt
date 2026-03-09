@@ -255,6 +255,11 @@ type App struct {
 	showSortMenu   bool
 	sortMenuCursor int
 
+	// Config viewer
+	showConfig     bool
+	configViewport viewport.Model
+	configContent  string
+
 	// Layout
 	screenMode ScreenMode
 	leftRatio  int // left column width percentage (default 30)
@@ -416,6 +421,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
 			return a.updateSQLDialog(msg)
+		}
+		// Config viewer intercepts all keys when active
+		if a.showConfig {
+			return a.updateConfigViewer(msg)
 		}
 		// Stash list intercepts all keys when active
 		if a.showStashList {
@@ -641,6 +650,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.syncHelpViewport()
 			a.helpViewport.GotoTop()
 			return a, textinput.Blink
+		case "@":
+			return a, a.loadConfig()
 		case "z":
 			if len(a.undoStack) > 0 {
 				a.showUndoConfirm = true
@@ -1016,6 +1027,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StashSuccessMsg:
 		cmds = append(cmds, a.setFlashSuccess("Changes stashed"))
 		cmds = append(cmds, a.loadData())
+
+	case ConfigLoadedMsg:
+		a.configContent = formatConfigContent(msg.Global, msg.Local)
+		a.configViewport = viewport.New(60, 20)
+		a.configViewport.SetContent(a.configContent)
+		a.showConfig = true
 
 	case StashListMsg:
 		a.stashEntries = msg.Entries
@@ -1488,6 +1505,9 @@ func (a App) View() string {
 	}
 	if a.showRenameBranch {
 		result = a.overlayRenameBranchDialog(result)
+	}
+	if a.showConfig {
+		result = a.overlayConfigViewer(result)
 	}
 
 	return result
@@ -3895,6 +3915,102 @@ func (a App) overlaySortMenu(base string) string {
 	)
 }
 
+// --- Config viewer ---
+
+func (a *App) loadConfig() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		global, local, err := runner.Config()
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return ConfigLoadedMsg{Global: global, Local: local}
+	}
+}
+
+func (a App) updateConfigViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "@":
+		a.showConfig = false
+		return a, nil
+	default:
+		var cmd tea.Cmd
+		a.configViewport, cmd = a.configViewport.Update(msg)
+		return a, cmd
+	}
+}
+
+func (a App) overlayConfigViewer(base string) string {
+	dialogW := a.width - 10
+	if dialogW > 80 {
+		dialogW = 80
+	}
+	if dialogW < 30 {
+		dialogW = a.width - 4
+	}
+	dialogH := a.height - 6
+	if dialogH < 10 {
+		dialogH = a.height - 2
+	}
+
+	a.configViewport.Width = dialogW - 4 // border + padding
+	a.configViewport.Height = dialogH - 4
+	a.configViewport.SetContent(a.configContent)
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Dolt Configuration") + "\n\n"
+	content += a.configViewport.View()
+	content += "\n" + dimStyle.Render("[Esc/q/@] close  [j/k] scroll")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// formatConfigContent builds a display string from config entries.
+func formatConfigContent(global, local []dolt.ConfigEntry) string {
+	var b strings.Builder
+
+	if len(global) > 0 {
+		b.WriteString("── Global ──\n\n")
+		maxKeyLen := 0
+		for _, e := range global {
+			if len(e.Key) > maxKeyLen {
+				maxKeyLen = len(e.Key)
+			}
+		}
+		for _, e := range global {
+			b.WriteString(fmt.Sprintf("  %-*s = %s\n", maxKeyLen, e.Key, e.Value))
+		}
+	}
+
+	if len(local) > 0 {
+		if len(global) > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("── Local ──\n\n")
+		maxKeyLen := 0
+		for _, e := range local {
+			if len(e.Key) > maxKeyLen {
+				maxKeyLen = len(e.Key)
+			}
+		}
+		for _, e := range local {
+			b.WriteString(fmt.Sprintf("  %-*s = %s\n", maxKeyLen, e.Key, e.Value))
+		}
+	}
+
+	if len(global) == 0 && len(local) == 0 {
+		b.WriteString("  No configuration found.\n")
+	}
+
+	return b.String()
+}
+
 // --- Table rename/copy/export input dialog ---
 
 func (a App) updateTableInputDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -4395,6 +4511,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Global", "z", "Undo last operation"},
 	{"Global", "Z", "Redo undone operation"},
 	{"Global", "y", "Copy selected item to clipboard"},
+	{"Global", "@", "View dolt configuration"},
 	{"Global", "Ctrl+L", "Redraw screen"},
 	{"Global", "?", "Toggle help"},
 	{"Tables Panel", "j/k", "Navigate"},
