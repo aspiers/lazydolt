@@ -74,6 +74,7 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 			{Key: "n", Desc: "new"},
 			{Key: "r", Desc: "rename"},
 			{Key: "D", Desc: "delete"},
+			{Key: "a", Desc: "add remote"},
 		}, global...)
 	case PanelCommits:
 		return append([]KeyHint{

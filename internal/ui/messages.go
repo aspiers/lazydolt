@@ -19,7 +19,14 @@ type DataLoadedMsg struct {
 	Branches []domain.Branch
 	Commits  []domain.Commit
 	Tags     []domain.Tag
+	Remotes  []domain.Remote
 }
+
+// AddRemoteSuccessMsg is sent when a remote is added.
+type AddRemoteSuccessMsg struct{ Name string }
+
+// DeleteRemoteSuccessMsg is sent when a remote is removed.
+type DeleteRemoteSuccessMsg struct{ Name string }
 
 // CommitSuccessMsg is sent when a commit succeeds.
 type CommitSuccessMsg struct{ Hash string }

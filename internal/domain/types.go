@@ -50,6 +50,12 @@ type Tag struct {
 	Message string    `json:"message"`
 }
 
+// Remote represents a configured dolt remote.
+type Remote struct {
+	Name string
+	URL  string
+}
+
 // DiffType classifies how a row changed.
 type DiffType string
 

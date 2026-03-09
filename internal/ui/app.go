@@ -121,6 +121,16 @@ type App struct {
 	showDeleteBranchConfirm bool
 	deleteBranchName        string
 
+	// Add remote dialog
+	showAddRemote  bool
+	remoteURLInput textinput.Model
+	addRemoteErr   string
+	addRemoteStep  int // 0 = entering name, 1 = entering URL
+
+	// Delete remote confirmation
+	showDeleteRemoteConfirm bool
+	deleteRemoteName        string
+
 	// Rename branch dialog
 	showRenameBranch bool
 	renameBranchOld  string
@@ -192,28 +202,33 @@ func NewApp(runner *dolt.Runner) App {
 	fi.CharLimit = 100
 	fi.Prompt = "/ "
 
+	ri := textinput.New()
+	ri.Placeholder = "https://..."
+	ri.CharLimit = 500
+
 	hf := textinput.New()
 	hf.Placeholder = "Type to filter..."
 	hf.CharLimit = 50
 	hf.Prompt = "/ "
 
 	app := App{
-		runner:        runner,
-		repoName:      filepath.Base(runner.RepoDir),
-		repoParent:    filepath.Dir(runner.RepoDir),
-		focused:       components.PanelTables,
-		diffView:      components.NewDiffView(80, 20),
-		schemaView:    components.NewSchemaView(80, 20),
-		browserView:   components.NewBrowserView(80, 20),
-		logView:       components.NewLogView(80, 20),
-		commitInput:   ti,
-		branchInput:   bi,
-		sqlInput:      si,
-		sqlHistoryIdx: -1,
-		filterInput:   fi,
-		helpFilter:    hf,
-		spinner:       s,
-		leftRatio:     30,
+		runner:         runner,
+		repoName:       filepath.Base(runner.RepoDir),
+		repoParent:     filepath.Dir(runner.RepoDir),
+		focused:        components.PanelTables,
+		diffView:       components.NewDiffView(80, 20),
+		schemaView:     components.NewSchemaView(80, 20),
+		browserView:    components.NewBrowserView(80, 20),
+		logView:        components.NewLogView(80, 20),
+		commitInput:    ti,
+		branchInput:    bi,
+		remoteURLInput: ri,
+		sqlInput:       si,
+		sqlHistoryIdx:  -1,
+		filterInput:    fi,
+		helpFilter:     hf,
+		spinner:        s,
+		leftRatio:      30,
 	}
 	app.syncFocus()
 	return app
@@ -275,6 +290,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Delete tag confirmation intercepts all keys when active
 		if a.showDeleteTagConfirm {
 			return a.updateDeleteTagConfirm(msg)
+		}
+		// Add remote dialog intercepts all keys when active
+		if a.showAddRemote {
+			return a.updateAddRemoteDialog(msg)
+		}
+		// Delete remote confirmation intercepts all keys when active
+		if a.showDeleteRemoteConfirm {
+			return a.updateDeleteRemoteConfirm(msg)
 		}
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
@@ -643,6 +666,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.tables.Tables = msg.Tables
 		a.branches.Branches = msg.Branches
 		a.branches.Tags = msg.Tags
+		a.branches.Remotes = msg.Remotes
 		a.commits.Commits = msg.Commits
 		a.errMsg = ""
 		// Clamp cursors
@@ -705,6 +729,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DeleteTagSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
+	case AddRemoteSuccessMsg:
+		a.showAddRemote = false
+		a.addRemoteErr = ""
+		cmds = append(cmds, a.loadData())
+
+	case DeleteRemoteSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
 	case SQLResultMsg:
 		// Display SQL results in the diff view
 		title := fmt.Sprintf("SQL: %s", msg.Query)
@@ -763,6 +795,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deleteTagMsg:
 		a.showDeleteTagConfirm = true
 		a.deleteTagName = msg.Tag
+	case addRemotePromptMsg:
+		return a, a.startAddRemote()
+	case deleteRemoteMsg:
+		a.showDeleteRemoteConfirm = true
+		a.deleteRemoteName = msg.Remote
 	case newBranchPromptMsg:
 		return a, a.startNewBranch()
 	case viewCommitMsg:
@@ -965,6 +1002,9 @@ func (a App) View() string {
 		if len(a.branches.Tags) > 0 {
 			branchesTitle += fmt.Sprintf(" Tags (%d)", len(a.branches.Tags))
 		}
+		if len(a.branches.Remotes) > 0 {
+			branchesTitle += fmt.Sprintf(" Remotes (%d)", len(a.branches.Remotes))
+		}
 		branchesBox := a.panelBox(components.PanelBranches, leftW, branchesH, branchesTitle, panelView(a.branches.View()))
 
 		// Commits panel
@@ -1087,6 +1127,12 @@ func (a App) View() string {
 	if a.showDeleteTagConfirm {
 		result = a.overlayDeleteTagConfirm(result)
 	}
+	if a.showAddRemote {
+		result = a.overlayAddRemoteDialog(result)
+	}
+	if a.showDeleteRemoteConfirm {
+		result = a.overlayDeleteRemoteConfirm(result)
+	}
 	if a.showStashList {
 		result = a.overlayStashList(result)
 	}
@@ -1163,6 +1209,9 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 		title := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
 		if len(a.branches.Tags) > 0 {
 			title += fmt.Sprintf(" Tags (%d)", len(a.branches.Tags))
+		}
+		if len(a.branches.Remotes) > 0 {
+			title += fmt.Sprintf(" Remotes (%d)", len(a.branches.Remotes))
 		}
 		return a.panelBox(components.PanelBranches, width, innerH, title, content(a.branches.View()))
 	case components.PanelCommits:
@@ -1439,12 +1488,17 @@ func (a *App) loadData() tea.Cmd {
 			tags []domain.Tag
 			err  error
 		}
+		type remotesResult struct {
+			remotes []domain.Remote
+			err     error
+		}
 
 		branchCh := make(chan branchResult, 1)
 		tablesCh := make(chan tablesResult, 1)
 		branchesCh := make(chan branchesResult, 1)
 		commitsCh := make(chan commitsResult, 1)
 		tagsCh := make(chan tagsResult, 1)
+		remotesCh := make(chan remotesResult, 1)
 
 		go func() {
 			b, err := runner.CurrentBranch()
@@ -1466,12 +1520,17 @@ func (a *App) loadData() tea.Cmd {
 			tg, err := runner.Tags()
 			tagsCh <- tagsResult{tg, err}
 		}()
+		go func() {
+			rm, err := runner.Remotes()
+			remotesCh <- remotesResult{rm, err}
+		}()
 
 		brRes := <-branchCh
 		tblRes := <-tablesCh
 		brchRes := <-branchesCh
 		cmtRes := <-commitsCh
 		tagRes := <-tagsCh
+		rmtRes := <-remotesCh
 
 		// Derive dirty from tables — any table with a non-nil Status
 		// has uncommitted changes, avoiding a redundant Status() call.
@@ -1489,6 +1548,12 @@ func (a *App) loadData() tea.Cmd {
 			tags = tagRes.tags
 		}
 
+		// Remotes are optional — don't fail the whole load if remotes can't be read
+		var remotes []domain.Remote
+		if rmtRes.err == nil {
+			remotes = rmtRes.remotes
+		}
+
 		return DataLoadedMsg{
 			Branch:   brRes.branch,
 			Dirty:    dirty,
@@ -1496,6 +1561,7 @@ func (a *App) loadData() tea.Cmd {
 			Branches: brchRes.branches,
 			Commits:  cmtRes.commits,
 			Tags:     tags,
+			Remotes:  remotes,
 		}
 	}
 }
@@ -2746,6 +2812,150 @@ func (a App) overlayDeleteTagConfirm(base string) string {
 	)
 }
 
+// --- Add remote dialog ---
+
+func (a *App) startAddRemote() tea.Cmd {
+	a.showAddRemote = true
+	a.addRemoteStep = 0
+	a.addRemoteErr = ""
+	a.branchInput.Reset()
+	a.branchInput.Placeholder = "Enter remote name..."
+	a.branchInput.Focus()
+	a.remoteURLInput.Reset()
+	a.remoteURLInput.Blur()
+	return nil
+}
+
+func (a App) updateAddRemoteDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if a.addRemoteStep == 1 {
+			// Go back to name step
+			a.addRemoteStep = 0
+			a.addRemoteErr = ""
+			a.remoteURLInput.Blur()
+			a.branchInput.Focus()
+			return a, nil
+		}
+		a.showAddRemote = false
+		a.addRemoteErr = ""
+		return a, nil
+	case "enter":
+		if a.addRemoteStep == 0 {
+			name := strings.TrimSpace(a.branchInput.Value())
+			if name == "" {
+				a.addRemoteErr = "Remote name cannot be empty"
+				return a, nil
+			}
+			// Advance to URL step
+			a.addRemoteStep = 1
+			a.addRemoteErr = ""
+			a.branchInput.Blur()
+			a.remoteURLInput.Focus()
+			return a, nil
+		}
+		// Step 1: submit
+		name := strings.TrimSpace(a.branchInput.Value())
+		url := strings.TrimSpace(a.remoteURLInput.Value())
+		if url == "" {
+			a.addRemoteErr = "Remote URL cannot be empty"
+			return a, nil
+		}
+		a.showAddRemote = false
+		a.addRemoteErr = ""
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.RemoteAdd(name, url); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return AddRemoteSuccessMsg{Name: name}
+		}
+	}
+	var cmd tea.Cmd
+	if a.addRemoteStep == 0 {
+		a.branchInput, cmd = a.branchInput.Update(msg)
+	} else {
+		a.remoteURLInput, cmd = a.remoteURLInput.Update(msg)
+	}
+	return a, cmd
+}
+
+func (a App) overlayAddRemoteDialog(base string) string {
+	dialogW := 60
+	if a.width < 70 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Add remote") + "\n\n"
+	content += "  Remote name:\n"
+	content += "  " + a.branchInput.View() + "\n\n"
+	if a.addRemoteStep >= 1 {
+		content += "  Remote URL:\n"
+		content += "  " + a.remoteURLInput.View() + "\n\n"
+	}
+	if a.addRemoteErr != "" {
+		content += errorStyle.Render("  "+a.addRemoteErr) + "\n\n"
+	}
+	if a.addRemoteStep == 0 {
+		content += dimStyle.Render("[Enter] next  [Esc] cancel")
+	} else {
+		content += dimStyle.Render("[Enter] add  [Esc] back")
+	}
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// --- Delete remote confirmation ---
+
+func (a App) updateDeleteRemoteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showDeleteRemoteConfirm = false
+		a.deleteRemoteName = ""
+		return a, nil
+	case "y", "enter":
+		name := a.deleteRemoteName
+		a.showDeleteRemoteConfirm = false
+		a.deleteRemoteName = ""
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.RemoteRemove(name); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return DeleteRemoteSuccessMsg{Name: name}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayDeleteRemoteConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Remove remote "+a.deleteRemoteName) + "\n\n"
+	content += "  Are you sure?\n\n"
+	content += "  [y/Enter] remove  " + dimStyle.Render("— delete remote") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Stash List ---
 
 func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
@@ -2906,7 +3116,8 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Branches Panel", "m", "Merge into current"},
 	{"Branches Panel", "n", "New branch"},
 	{"Branches Panel", "r", "Rename branch"},
-	{"Branches Panel", "D", "Delete branch"},
+	{"Branches Panel", "D", "Delete branch/tag/remote"},
+	{"Branches Panel", "a", "Add remote"},
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},
 	{"Commits Panel", "A", "Amend last commit"},
@@ -3097,4 +3308,6 @@ type checkoutBranchMsg = components.CheckoutBranchMsg
 type deleteBranchMsg = components.DeleteBranchMsg
 type deleteTagMsg = components.DeleteTagMsg
 type newBranchPromptMsg = components.NewBranchPromptMsg
+type addRemotePromptMsg = components.AddRemotePromptMsg
+type deleteRemoteMsg = components.DeleteRemoteMsg
 type browserPageMsg = components.BrowserPageMsg
