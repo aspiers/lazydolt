@@ -255,6 +255,13 @@ type App struct {
 	showSortMenu   bool
 	sortMenuCursor int
 
+	// Commit filter (SQL-level)
+	commitFilter       dolt.CommitFilter
+	showCommitFilter   bool // filter type menu visible
+	commitFilterCursor int  // menu cursor
+	showFilterInput    bool // text input for filter value
+	filterType         int  // 0=author, 1=message
+
 	// Config viewer
 	showConfig     bool
 	configViewport viewport.Model
@@ -403,6 +410,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.showTableDrop {
 			return a.updateTableDropConfirm(msg)
+		}
+		if a.showFilterInput {
+			return a.updateCommitFilterInput(msg)
+		}
+		if a.showCommitFilter {
+			return a.updateCommitFilterMenu(msg)
 		}
 		if a.showSortMenu {
 			return a.updateSortMenu(msg)
@@ -788,6 +801,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "s" {
 				a.showSortMenu = true
 				a.sortMenuCursor = int(a.commitSort)
+				return a, nil
+			}
+			if msg.String() == "F" {
+				a.showCommitFilter = true
+				a.commitFilterCursor = 0
 				return a, nil
 			}
 			if msg.String() == "A" {
@@ -1473,6 +1491,12 @@ func (a App) View() string {
 	if a.showDeleteTagConfirm {
 		result = a.overlayDeleteTagConfirm(result)
 	}
+	if a.showCommitFilter {
+		result = a.overlayCommitFilterMenu(result)
+	}
+	if a.showFilterInput {
+		result = a.overlayCommitFilterInput(result)
+	}
 	if a.showSortMenu {
 		result = a.overlaySortMenu(result)
 	}
@@ -1829,10 +1853,19 @@ func (a App) loadingText() string {
 // branch name if viewing a different branch's commits.
 func (a *App) commitsTitle() string {
 	count := len(a.commits.Commits)
-	if a.viewingBranch != "" {
-		return fmt.Sprintf("[3]─Commits: %s (%d)", a.viewingBranch, count)
+	filterTag := ""
+	if !a.commitFilter.IsEmpty() {
+		if a.commitFilter.Author != "" {
+			filterTag = " [author:" + a.commitFilter.Author + "]"
+		}
+		if a.commitFilter.Message != "" {
+			filterTag += " [msg:" + a.commitFilter.Message + "]"
+		}
 	}
-	return fmt.Sprintf("[3]─Commits (%d)", count)
+	if a.viewingBranch != "" {
+		return fmt.Sprintf("[3]─Commits: %s (%d)%s", a.viewingBranch, count, filterTag)
+	}
+	return fmt.Sprintf("[3]─Commits (%d)%s", count, filterTag)
 }
 
 // viewBranchCommits loads commits for a specific branch without checking it out.
@@ -1846,8 +1879,9 @@ func (a *App) viewBranchCommits(branch string) tea.Cmd {
 	a.viewingBranch = branch
 	runner := a.runner
 	commitOrder := a.commitSort.orderBy()
+	cFilter := a.commitFilter
 	return func() tea.Msg {
-		commits, err := runner.Log(branch, 50, commitOrder)
+		commits, err := runner.Log(branch, 50, commitOrder, cFilter)
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("log %s: %w", branch, err)}
 		}
@@ -1859,6 +1893,7 @@ func (a *App) loadData() tea.Cmd {
 	runner := a.runner
 	branchOrder := a.branchSort.orderBy()
 	commitOrder := a.commitSort.orderBy()
+	cFilter := a.commitFilter
 	return func() tea.Msg {
 		type branchResult struct {
 			branch string
@@ -1905,7 +1940,7 @@ func (a *App) loadData() tea.Cmd {
 			branchesCh <- branchesResult{br, err}
 		}()
 		go func() {
-			c, err := runner.Log("", 50, commitOrder)
+			c, err := runner.Log("", 50, commitOrder, cFilter)
 			commitsCh <- commitsResult{c, err}
 		}()
 		go func() {
@@ -3915,6 +3950,147 @@ func (a App) overlaySortMenu(base string) string {
 	)
 }
 
+// --- Commit filter menu ---
+
+var commitFilterItems = []string{"By author", "By message", "Clear filter"}
+
+func (a App) updateCommitFilterMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showCommitFilter = false
+		return a, nil
+	case "j", "down":
+		if a.commitFilterCursor < len(commitFilterItems)-1 {
+			a.commitFilterCursor++
+		}
+		return a, nil
+	case "k", "up":
+		if a.commitFilterCursor > 0 {
+			a.commitFilterCursor--
+		}
+		return a, nil
+	case "enter", " ":
+		a.showCommitFilter = false
+		switch a.commitFilterCursor {
+		case 0: // By author
+			a.filterType = 0
+			a.showFilterInput = true
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Filter by author..."
+			if a.commitFilter.Author != "" {
+				a.branchInput.SetValue(a.commitFilter.Author)
+			}
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+			return a, textinput.Blink
+		case 1: // By message
+			a.filterType = 1
+			a.showFilterInput = true
+			a.branchInput.Reset()
+			a.branchInput.Placeholder = "Filter by message..."
+			if a.commitFilter.Message != "" {
+				a.branchInput.SetValue(a.commitFilter.Message)
+			}
+			a.branchInput.Focus()
+			a.branchInput.CursorEnd()
+			return a, textinput.Blink
+		case 2: // Clear filter
+			a.commitFilter = dolt.CommitFilter{}
+			return a, a.loadData()
+		}
+	}
+	return a, nil
+}
+
+func (a App) updateCommitFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showFilterInput = false
+		a.branchInput.Blur()
+		return a, nil
+	case "enter":
+		value := strings.TrimSpace(a.branchInput.Value())
+		a.showFilterInput = false
+		a.branchInput.Blur()
+		switch a.filterType {
+		case 0:
+			a.commitFilter.Author = value
+		case 1:
+			a.commitFilter.Message = value
+		}
+		return a, a.loadData()
+	default:
+		var cmd tea.Cmd
+		a.branchInput, cmd = a.branchInput.Update(msg)
+		return a, cmd
+	}
+}
+
+func (a App) overlayCommitFilterMenu(base string) string {
+	dialogW := 40
+	if a.width < 50 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	menuSelectedStyle := lipgloss.NewStyle().Reverse(true)
+
+	activeStr := ""
+	if !a.commitFilter.IsEmpty() {
+		if a.commitFilter.Author != "" {
+			activeStr += "\n  Active: author=" + a.commitFilter.Author
+		}
+		if a.commitFilter.Message != "" {
+			activeStr += "\n  Active: message=" + a.commitFilter.Message
+		}
+		activeStr += "\n"
+	}
+
+	content := titleStyle.Render("Filter Commits") + "\n" + activeStr + "\n"
+	for i, item := range commitFilterItems {
+		prefix := "  "
+		if i == a.commitFilterCursor {
+			prefix = "> "
+			content += menuSelectedStyle.Render(prefix+item) + "\n"
+		} else {
+			content += prefix + item + "\n"
+		}
+	}
+	content += "\n" + dimStyle.Render("[Enter] select  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+func (a App) overlayCommitFilterInput(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	title := "Filter by Author"
+	if a.filterType == 1 {
+		title = "Filter by Message"
+	}
+
+	content := titleStyle.Render(title) + "\n\n"
+	content += a.branchInput.View() + "\n\n"
+	content += dimStyle.Render("[Enter] apply  [Esc] cancel  (empty = clear)")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Config viewer ---
 
 func (a *App) loadConfig() tea.Cmd {
@@ -4541,6 +4717,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "j/k", "Navigate"},
 	{"Commits Panel", "Enter", "View commit details"},
 	{"Commits Panel", "s", "Sort commits"},
+	{"Commits Panel", "F", "Filter commits (by author/message)"},
 	{"Commits Panel", "A", "Amend last commit"},
 	{"Commits Panel", "g", "Reset to commit"},
 	{"Commits Panel", "C", "Cherry-pick commit"},

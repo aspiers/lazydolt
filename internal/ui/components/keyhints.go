@@ -89,6 +89,7 @@ func hintsForPanel(panel Panel, hasConflicts bool) []KeyHint {
 		return append([]KeyHint{
 			{Key: "Enter", Desc: "details"},
 			{Key: "s", Desc: "sort"},
+			{Key: "F", Desc: "filter"},
 			{Key: "A", Desc: "amend"},
 			{Key: "g", Desc: "reset"},
 			{Key: "C", Desc: "cherry-pick"},
