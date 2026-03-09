@@ -18,6 +18,7 @@ type DataLoadedMsg struct {
 	Tables   []domain.Table
 	Branches []domain.Branch
 	Commits  []domain.Commit
+	Tags     []domain.Tag
 }
 
 // CommitSuccessMsg is sent when a commit succeeds.
@@ -58,6 +59,12 @@ type CherryPickConflictMsg struct{ Hash string }
 
 // RevertSuccessMsg is sent when a revert completes.
 type RevertSuccessMsg struct{ Hash string }
+
+// TagSuccessMsg is sent when a tag is created.
+type TagSuccessMsg struct{ Name string }
+
+// DeleteTagSuccessMsg is sent when a tag is deleted.
+type DeleteTagSuccessMsg struct{ Name string }
 
 // StashSuccessMsg is sent when changes are stashed.
 type StashSuccessMsg struct{}

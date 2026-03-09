@@ -39,6 +39,17 @@ type Commit struct {
 	Date    time.Time `json:"date"`
 }
 
+// Tag represents a dolt tag.
+// Maps to columns from the dolt_tags system table.
+type Tag struct {
+	Name    string    `json:"tag_name"`
+	Hash    string    `json:"tag_hash"`
+	Tagger  string    `json:"tagger"`
+	Email   string    `json:"email"`
+	Date    time.Time `json:"date"`
+	Message string    `json:"message"`
+}
+
 // DiffType classifies how a row changed.
 type DiffType string
 

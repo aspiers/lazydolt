@@ -108,6 +108,15 @@ type App struct {
 	showRevertConfirm bool
 	revertHash        string
 
+	// Tag creation dialog
+	showTagDialog bool
+	tagCommitHash string
+	tagErr        string
+
+	// Delete tag confirmation
+	showDeleteTagConfirm bool
+	deleteTagName        string
+
 	// Delete branch confirmation
 	showDeleteBranchConfirm bool
 	deleteBranchName        string
@@ -258,6 +267,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Revert confirmation intercepts all keys when active
 		if a.showRevertConfirm {
 			return a.updateRevertConfirm(msg)
+		}
+		// Tag dialog intercepts all keys when active
+		if a.showTagDialog {
+			return a.updateTagDialog(msg)
+		}
+		// Delete tag confirmation intercepts all keys when active
+		if a.showDeleteTagConfirm {
+			return a.updateDeleteTagConfirm(msg)
 		}
 		// SQL dialog intercepts all keys when active
 		if a.showSQL {
@@ -570,6 +587,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 			}
+			if msg.String() == "T" {
+				if h := a.commits.SelectedHash(); h != "" {
+					a.showTagDialog = true
+					a.tagCommitHash = h
+					a.tagErr = ""
+					a.branchInput.SetValue("")
+					a.branchInput.Placeholder = "Enter tag name..."
+					a.branchInput.Focus()
+					return a, textinput.Blink
+				}
+			}
 			var cmd tea.Cmd
 			a.commits, cmd = a.commits.Update(msg)
 			cmds = append(cmds, cmd)
@@ -614,12 +642,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.statusBar.ParentDir = a.repoParent
 		a.tables.Tables = msg.Tables
 		a.branches.Branches = msg.Branches
+		a.branches.Tags = msg.Tags
 		a.commits.Commits = msg.Commits
 		a.errMsg = ""
 		// Clamp cursors
 		a.tables.ClampCursor()
-		if a.branches.Cursor >= len(a.branches.Branches) {
-			a.branches.Cursor = max(0, len(a.branches.Branches)-1)
+		if a.branches.Cursor >= a.branches.ItemCount() {
+			a.branches.Cursor = max(0, a.branches.ItemCount()-1)
 		}
 		// Auto-load content for the active tab
 		cmds = append(cmds, a.autoPreview())
@@ -668,6 +697,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.loadData())
 
 	case RevertSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case TagSuccessMsg:
+		cmds = append(cmds, a.loadData())
+
+	case DeleteTagSuccessMsg:
 		cmds = append(cmds, a.loadData())
 
 	case SQLResultMsg:
@@ -725,6 +760,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case deleteBranchMsg:
 		a.showDeleteBranchConfirm = true
 		a.deleteBranchName = msg.Branch
+	case deleteTagMsg:
+		a.showDeleteTagConfirm = true
+		a.deleteTagName = msg.Tag
 	case newBranchPromptMsg:
 		return a, a.startNewBranch()
 	case viewCommitMsg:
@@ -924,6 +962,9 @@ func (a App) View() string {
 		// Branches panel
 		a.branches.Height = branchesH
 		branchesTitle := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
+		if len(a.branches.Tags) > 0 {
+			branchesTitle += fmt.Sprintf(" Tags (%d)", len(a.branches.Tags))
+		}
 		branchesBox := a.panelBox(components.PanelBranches, leftW, branchesH, branchesTitle, panelView(a.branches.View()))
 
 		// Commits panel
@@ -1040,6 +1081,12 @@ func (a App) View() string {
 	if a.showRevertConfirm {
 		result = a.overlayRevertConfirm(result)
 	}
+	if a.showTagDialog {
+		result = a.overlayTagDialog(result)
+	}
+	if a.showDeleteTagConfirm {
+		result = a.overlayDeleteTagConfirm(result)
+	}
 	if a.showStashList {
 		result = a.overlayStashList(result)
 	}
@@ -1114,6 +1161,9 @@ func (a App) renderFocusedPanel(width, innerH int) string {
 	case components.PanelBranches:
 		a.branches.Height = innerH
 		title := fmt.Sprintf("[2]─Branches (%d)", len(a.branches.Branches))
+		if len(a.branches.Tags) > 0 {
+			title += fmt.Sprintf(" Tags (%d)", len(a.branches.Tags))
+		}
 		return a.panelBox(components.PanelBranches, width, innerH, title, content(a.branches.View()))
 	case components.PanelCommits:
 		a.commits.Height = innerH
@@ -1385,11 +1435,16 @@ func (a *App) loadData() tea.Cmd {
 			commits []domain.Commit
 			err     error
 		}
+		type tagsResult struct {
+			tags []domain.Tag
+			err  error
+		}
 
 		branchCh := make(chan branchResult, 1)
 		tablesCh := make(chan tablesResult, 1)
 		branchesCh := make(chan branchesResult, 1)
 		commitsCh := make(chan commitsResult, 1)
+		tagsCh := make(chan tagsResult, 1)
 
 		go func() {
 			b, err := runner.CurrentBranch()
@@ -1407,11 +1462,16 @@ func (a *App) loadData() tea.Cmd {
 			c, err := runner.Log(50)
 			commitsCh <- commitsResult{c, err}
 		}()
+		go func() {
+			tg, err := runner.Tags()
+			tagsCh <- tagsResult{tg, err}
+		}()
 
 		brRes := <-branchCh
 		tblRes := <-tablesCh
 		brchRes := <-branchesCh
 		cmtRes := <-commitsCh
+		tagRes := <-tagsCh
 
 		// Derive dirty from tables — any table with a non-nil Status
 		// has uncommitted changes, avoiding a redundant Status() call.
@@ -1423,12 +1483,19 @@ func (a *App) loadData() tea.Cmd {
 			}
 		}
 
+		// Tags are optional — don't fail the whole load if tags can't be read
+		var tags []domain.Tag
+		if tagRes.err == nil {
+			tags = tagRes.tags
+		}
+
 		return DataLoadedMsg{
 			Branch:   brRes.branch,
 			Dirty:    dirty,
 			Tables:   tblRes.tables,
 			Branches: brchRes.branches,
 			Commits:  cmtRes.commits,
+			Tags:     tags,
 		}
 	}
 }
@@ -2111,6 +2178,7 @@ func (a App) overlayCommitDialog(base string) string {
 func (a *App) startNewBranch() tea.Cmd {
 	a.showBranch = true
 	a.branchInput.Reset()
+	a.branchInput.Placeholder = "Enter branch name..."
 	a.branchInput.Focus()
 	a.branchErr = ""
 	return textinput.Blink
@@ -2574,6 +2642,110 @@ func (a App) overlayRevertConfirm(base string) string {
 	)
 }
 
+// --- Tag dialog ---
+
+func (a App) updateTagDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showTagDialog = false
+		a.tagCommitHash = ""
+		a.tagErr = ""
+		return a, nil
+	case "enter":
+		name := strings.TrimSpace(a.branchInput.Value())
+		if name == "" {
+			a.tagErr = "Tag name cannot be empty"
+			return a, nil
+		}
+		a.showTagDialog = false
+		hash := a.tagCommitHash
+		a.tagCommitHash = ""
+		a.tagErr = ""
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.CreateTag(name, hash, ""); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return TagSuccessMsg{Name: name}
+		}
+	}
+	var cmd tea.Cmd
+	a.branchInput, cmd = a.branchInput.Update(msg)
+	return a, cmd
+}
+
+func (a App) overlayTagDialog(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	shortHash := a.tagCommitHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	content := titleStyle.Render("Create tag at "+shortHash) + "\n\n"
+	content += "  Tag name:\n"
+	content += "  " + a.branchInput.View() + "\n\n"
+	if a.tagErr != "" {
+		content += errorStyle.Render("  "+a.tagErr) + "\n\n"
+	}
+	content += dimStyle.Render("[Enter] create  [Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
+// --- Delete tag confirmation ---
+
+func (a App) updateDeleteTagConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.showDeleteTagConfirm = false
+		a.deleteTagName = ""
+		return a, nil
+	case "y", "enter":
+		name := a.deleteTagName
+		a.showDeleteTagConfirm = false
+		a.deleteTagName = ""
+		runner := a.runner
+		return a, func() tea.Msg {
+			if err := runner.DeleteTag(name); err != nil {
+				return ErrorMsg{Err: err}
+			}
+			return DeleteTagSuccessMsg{Name: name}
+		}
+	}
+	return a, nil
+}
+
+func (a App) overlayDeleteTagConfirm(base string) string {
+	dialogW := 50
+	if a.width < 60 {
+		dialogW = a.width - 10
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+
+	content := titleStyle.Render("Delete tag "+a.deleteTagName) + "\n\n"
+	content += "  Are you sure?\n\n"
+	content += "  [y/Enter] delete  " + dimStyle.Render("— remove tag") + "\n\n"
+	content += dimStyle.Render("[Esc] cancel")
+
+	dialog := commitBoxStyle.Width(dialogW).Render(content)
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
+	)
+}
+
 // --- Stash List ---
 
 func (a App) updateStashList(msg tea.KeyMsg) (App, tea.Cmd) {
@@ -2741,6 +2913,7 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "g", "Reset to commit"},
 	{"Commits Panel", "C", "Cherry-pick commit"},
 	{"Commits Panel", "t", "Revert commit"},
+	{"Commits Panel", "T", "Create tag at commit"},
 	{"Main Panel", "j/k", "Scroll up/down"},
 	{"Main Panel", "PgUp/PgDn", "Page up/down"},
 	{"Main Panel", "u/d", "Half page up/down"},
@@ -2922,5 +3095,6 @@ type viewTableDataMsg = components.ViewTableDataMsg
 type viewCommitMsg = components.ViewCommitMsg
 type checkoutBranchMsg = components.CheckoutBranchMsg
 type deleteBranchMsg = components.DeleteBranchMsg
+type deleteTagMsg = components.DeleteTagMsg
 type newBranchPromptMsg = components.NewBranchPromptMsg
 type browserPageMsg = components.BrowserPageMsg
