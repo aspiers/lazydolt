@@ -122,4 +122,8 @@ type Runner interface {
 
 	// Command log (for TUI display)
 	CommandLog() []domain.CommandLogEntry
+
+	// Close releases resources (e.g. database connections, child processes).
+	// CLIRunner's Close is a no-op. SQLRunner stops the sql-server process.
+	Close() error
 }

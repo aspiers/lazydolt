@@ -21,6 +21,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	defer runner.Close()
 
 	app := ui.NewApp(runner)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())

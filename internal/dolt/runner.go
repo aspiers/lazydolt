@@ -184,6 +184,11 @@ func (r *CLIRunner) DiffStatBetween(fromRef, toRef string) ([]domain.DiffStatEnt
 	return entries, nil
 }
 
+// Close is a no-op for CLIRunner (no persistent resources to release).
+func (r *CLIRunner) Close() error {
+	return nil
+}
+
 // stripANSI removes ANSI escape codes from a string.
 func stripANSI(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
