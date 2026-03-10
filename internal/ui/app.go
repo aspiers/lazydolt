@@ -1769,12 +1769,9 @@ func (a App) panelBox(panel components.Panel, width, height int, title, content 
 		style = focusedBorder
 	}
 	innerW := width - 2 // account for border (1 char each side)
-	// Clip each line to the panel width to prevent wrapping.
-	// Users can H/L scroll to see truncated content.
-	content = clipLines(content, innerW)
-	// Lipgloss Height() sets minimum height but doesn't clip overflow.
-	// Truncate content to the panel height.
-	content = truncateToVisualHeight(content, height, innerW)
+	// Clip lines to panel width (preventing wrapping) and truncate to
+	// panel height in a single pass over the content.
+	content = clipAndTruncate(content, innerW, height)
 	rendered := style.Width(innerW).Height(height).Render(content)
 
 	if title == "" {
@@ -1829,53 +1826,33 @@ func buildTitleBorder(title string, totalWidth int, focused bool) string {
 		borderStyle.Render(strings.Repeat("─", fillCount)+"╮")
 }
 
-// clipLines truncates each line of content to maxWidth visible columns,
-// preserving ANSI escape sequences. This prevents lipgloss from wrapping
-// long lines within bordered panels.
-func clipLines(content string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return content
+// clipAndTruncate clips each line to maxWidth visible columns and keeps
+// at most maxLines lines. This combines what were previously two separate
+// passes (clipLines + truncateToVisualHeight) into a single split+iterate.
+// Since lines are clipped to maxWidth first, no line can wrap, so each
+// logical line occupies exactly one visual line.
+func clipAndTruncate(content string, maxWidth, maxLines int) string {
+	if maxLines <= 0 {
+		return ""
 	}
+
 	lines := strings.Split(content, "\n")
+
+	// Cap to maxLines before doing any width work.
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+
+	if maxWidth <= 0 {
+		return strings.Join(lines, "\n")
+	}
+
 	for i, line := range lines {
 		if lipgloss.Width(line) > maxWidth {
 			lines[i] = ansi.Truncate(line, maxWidth, "")
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// truncateToVisualHeight clips content to at most maxLines visual lines,
-// accounting for text wrapping within the given width.
-func truncateToVisualHeight(content string, maxLines, width int) string {
-	if maxLines <= 0 {
-		return ""
-	}
-	if width <= 0 {
-		width = 1
-	}
-
-	lines := strings.Split(content, "\n")
-	visualCount := 0
-	var kept []string
-
-	for _, line := range lines {
-		lineW := lipgloss.Width(line)
-		// How many visual lines does this logical line occupy?
-		wrapped := 1
-		if lineW > width {
-			wrapped = (lineW + width - 1) / width
-		}
-
-		if visualCount+wrapped > maxLines {
-			// This line would push us over; stop here.
-			break
-		}
-		kept = append(kept, line)
-		visualCount += wrapped
-	}
-
-	return strings.Join(kept, "\n")
 }
 
 func (a App) mainPanelTitle() string {
