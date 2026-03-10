@@ -59,6 +59,7 @@ func NewSQLRunner(repoDir string) (*SQLRunner, error) {
 		if db, err := r.connectToServer(info.port); err == nil {
 			r.db = db
 			r.serverPort = info.port
+			r.injectSQLFunc()
 			return r, nil
 		}
 	}
@@ -82,7 +83,59 @@ func NewSQLRunner(repoDir string) (*SQLRunner, error) {
 
 	r.db = db
 	r.serverPort = port
+	r.injectSQLFunc()
 	return r, nil
+}
+
+// injectSQLFunc replaces the embedded CLIRunner's sqlFunc with the
+// SQLRunner's server-based implementation. This ensures that all
+// CLIRunner methods calling sqlFunc (Status, Branches, Log, etc.)
+// use the persistent connection instead of spawning subprocesses.
+func (r *SQLRunner) injectSQLFunc() {
+	r.CLIRunner.sqlFunc = r.serverSQL
+}
+
+// serverSQL executes a SQL query via the persistent sql-server connection.
+// This is the strategy function injected into CLIRunner.sqlFunc.
+func (r *SQLRunner) serverSQL(query string) ([]map[string]interface{}, error) {
+	cmdStr := "dolt sql -r json -q " + query
+	rows, err := r.db.Query(query)
+	if err != nil {
+		r.logCommand(cmdStr, err.Error(), true)
+		return nil, fmt.Errorf("%s: %w", cmdStr, err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("getting columns: %w", err)
+	}
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		row := make(map[string]interface{}, len(cols))
+		for i, col := range cols {
+			row[col] = normalizeValue(vals[i])
+		}
+		result = append(result, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		r.logCommand(cmdStr, err.Error(), true)
+		return nil, err
+	}
+
+	r.logCommand(cmdStr, fmt.Sprintf("%d rows", len(result)), false)
+	return result, nil
 }
 
 // Close stops the sql-server (if we started it) and closes connections.
@@ -110,51 +163,6 @@ func (r *SQLRunner) Close() error {
 // methods migrated to SQL in phases 3a/3b).
 func (r *SQLRunner) DB() *sql.DB {
 	return r.db
-}
-
-// SQL overrides CLIRunner.SQL to execute queries via the persistent
-// sql-server connection instead of spawning a subprocess. Returns
-// results in the same []map[string]interface{} format as CLIRunner.
-func (r *SQLRunner) SQL(query string) ([]map[string]interface{}, error) {
-	cmdStr := "dolt sql -r json -q " + query
-	rows, err := r.db.Query(query)
-	if err != nil {
-		r.logCommand(cmdStr, err.Error(), true)
-		return nil, fmt.Errorf("%s: %w", cmdStr, err)
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("getting columns: %w", err)
-	}
-
-	var result []map[string]interface{}
-	for rows.Next() {
-		// Create a slice of interface{} pointers for scanning.
-		vals := make([]interface{}, len(cols))
-		ptrs := make([]interface{}, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, fmt.Errorf("scanning row: %w", err)
-		}
-
-		row := make(map[string]interface{}, len(cols))
-		for i, col := range cols {
-			row[col] = normalizeValue(vals[i])
-		}
-		result = append(result, row)
-	}
-
-	if err := rows.Err(); err != nil {
-		r.logCommand(cmdStr, err.Error(), true)
-		return nil, err
-	}
-
-	r.logCommand(cmdStr, fmt.Sprintf("%d rows", len(result)), false)
-	return result, nil
 }
 
 // normalizeValue converts SQL driver values to the types that callers

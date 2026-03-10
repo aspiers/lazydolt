@@ -24,6 +24,12 @@ type CLIRunner struct {
 	doltPath string // path to dolt binary
 	repoDir  string // working directory for commands
 
+	// sqlFunc is the internal SQL execution strategy. Methods like
+	// Status(), Branches(), Log() etc. call this instead of r.SQL()
+	// directly, allowing SQLRunner to inject its faster implementation.
+	// Defaults to cliSQL (subprocess-based) in NewCLIRunner.
+	sqlFunc func(query string) ([]map[string]interface{}, error)
+
 	logMu  sync.Mutex
 	cmdLog []domain.CommandLogEntry
 }
@@ -52,10 +58,12 @@ func NewCLIRunner(repoDir string) (*CLIRunner, error) {
 		return nil, fmt.Errorf("%q is not a dolt repository (no .dolt directory)", absDir)
 	}
 
-	return &CLIRunner{
+	r := &CLIRunner{
 		doltPath: doltPath,
 		repoDir:  absDir,
-	}, nil
+	}
+	r.sqlFunc = r.cliSQL
+	return r, nil
 }
 
 // Exec runs a dolt CLI command and returns stdout with ANSI codes stripped.
@@ -122,9 +130,16 @@ func (r *CLIRunner) CommandLog() []domain.CommandLogEntry {
 	return result
 }
 
-// SQL runs a SQL query via 'dolt sql -r json' and returns parsed rows.
-// Dolt returns JSON like {"rows": [{...}, {...}]} or {} for empty results.
+// SQL runs a SQL query and returns parsed rows. It delegates to sqlFunc,
+// which defaults to cliSQL (subprocess) but can be overridden by SQLRunner
+// to use a persistent connection.
 func (r *CLIRunner) SQL(query string) ([]map[string]interface{}, error) {
+	return r.sqlFunc(query)
+}
+
+// cliSQL is the default SQL implementation that spawns a dolt subprocess.
+// Dolt returns JSON like {"rows": [{...}, {...}]} or {} for empty results.
+func (r *CLIRunner) cliSQL(query string) ([]map[string]interface{}, error) {
 	out, err := r.ExecRaw("sql", "-r", "json", "-q", query)
 	if err != nil {
 		return nil, err
