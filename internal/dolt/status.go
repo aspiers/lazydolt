@@ -7,7 +7,7 @@ import (
 )
 
 // Status returns the working set status (staged/unstaged table changes).
-func (r *Runner) Status() ([]domain.StatusEntry, error) {
+func (r *CLIRunner) Status() ([]domain.StatusEntry, error) {
 	rows, err := r.SQL("SELECT * FROM dolt_status")
 	if err != nil {
 		return nil, fmt.Errorf("querying dolt_status: %w", err)
@@ -38,7 +38,7 @@ func (r *Runner) Status() ([]domain.StatusEntry, error) {
 }
 
 // CurrentBranch returns the name of the currently checked-out branch.
-func (r *Runner) CurrentBranch() (string, error) {
+func (r *CLIRunner) CurrentBranch() (string, error) {
 	rows, err := r.SQL("SELECT active_branch() as branch")
 	if err != nil {
 		return "", fmt.Errorf("querying active_branch(): %w", err)
@@ -52,7 +52,7 @@ func (r *Runner) CurrentBranch() (string, error) {
 }
 
 // IsDirty returns true if the working set has uncommitted changes.
-func (r *Runner) IsDirty() (bool, error) {
+func (r *CLIRunner) IsDirty() (bool, error) {
 	entries, err := r.Status()
 	if err != nil {
 		return false, err

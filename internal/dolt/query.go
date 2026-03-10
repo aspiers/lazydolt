@@ -8,7 +8,7 @@ import (
 )
 
 // Query runs an arbitrary SQL query and returns structured results.
-func (r *Runner) Query(sql string) (*domain.QueryResult, error) {
+func (r *CLIRunner) Query(sql string) (*domain.QueryResult, error) {
 	rows, err := r.SQL(sql)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (r *Runner) Query(sql string) (*domain.QueryResult, error) {
 }
 
 // QueryPage runs a paginated SELECT and includes total row count.
-func (r *Runner) QueryPage(table string, limit, offset int) (*domain.QueryResult, error) {
+func (r *CLIRunner) QueryPage(table string, limit, offset int) (*domain.QueryResult, error) {
 	sql := fmt.Sprintf("SELECT * FROM `%s` LIMIT %d OFFSET %d", table, limit, offset)
 	result, err := r.Query(sql)
 	if err != nil {

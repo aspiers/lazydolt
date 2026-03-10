@@ -109,7 +109,7 @@ func (s CommitSort) orderBy() dolt.CommitOrderBy {
 
 // App is the root Bubble Tea model.
 type App struct {
-	runner     *dolt.Runner
+	runner     dolt.Runner
 	repoName   string
 	repoParent string
 	width      int
@@ -297,7 +297,7 @@ type App struct {
 }
 
 // NewApp creates a new App with the given dolt runner.
-func NewApp(runner *dolt.Runner) App {
+func NewApp(runner dolt.Runner) App {
 	ti := textinput.New()
 	ti.Placeholder = "Enter commit message..."
 	ti.CharLimit = 200
@@ -333,8 +333,8 @@ func NewApp(runner *dolt.Runner) App {
 
 	app := App{
 		runner:         runner,
-		repoName:       filepath.Base(runner.RepoDir),
-		repoParent:     filepath.Dir(runner.RepoDir),
+		repoName:       filepath.Base(runner.RepoDir()),
+		repoParent:     filepath.Dir(runner.RepoDir()),
 		focused:        components.PanelTables,
 		diffView:       components.NewDiffView(80, 20),
 		schemaView:     components.NewSchemaView(80, 20),

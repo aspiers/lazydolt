@@ -7,7 +7,7 @@ import (
 )
 
 // Tags returns the list of tags in the repository.
-func (r *Runner) Tags() ([]domain.Tag, error) {
+func (r *CLIRunner) Tags() ([]domain.Tag, error) {
 	rows, err := r.SQL("SELECT tag_name, tag_hash, tagger, email, date, message FROM dolt_tags ORDER BY date DESC")
 	if err != nil {
 		return nil, fmt.Errorf("querying dolt_tags: %w", err)
@@ -37,7 +37,7 @@ func (r *Runner) Tags() ([]domain.Tag, error) {
 
 // CreateTag creates a new tag pointing at the given ref.
 // If ref is empty, it points at HEAD.
-func (r *Runner) CreateTag(name, ref, message string) error {
+func (r *CLIRunner) CreateTag(name, ref, message string) error {
 	args := []string{"tag", name}
 	if ref != "" {
 		args = append(args, ref)
@@ -50,7 +50,7 @@ func (r *Runner) CreateTag(name, ref, message string) error {
 }
 
 // DeleteTag deletes a tag.
-func (r *Runner) DeleteTag(name string) error {
+func (r *CLIRunner) DeleteTag(name string) error {
 	_, err := r.Exec("tag", "-d", name)
 	return err
 }

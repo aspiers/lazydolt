@@ -16,7 +16,7 @@ const (
 // The format controls the output type (sql, csv, json, parquet).
 // The filename is the output file (for SQL) or directory (for CSV/JSON/Parquet).
 // Force overwrites existing files.
-func (r *Runner) Dump(format DumpFormat, filename string, force bool) error {
+func (r *CLIRunner) Dump(format DumpFormat, filename string, force bool) error {
 	args := []string{"dump", "-r", string(format)}
 	if force {
 		args = append(args, "-f")

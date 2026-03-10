@@ -14,13 +14,13 @@ import (
 var stashRegex = regexp.MustCompile(`^stash@\{(\d+)\}: WIP on refs/heads/(\S+): (\S+) (.+)$`)
 
 // Stash saves the current working set to the stash.
-func (r *Runner) Stash() error {
+func (r *CLIRunner) Stash() error {
 	_, err := r.Exec("stash")
 	return err
 }
 
 // StashList returns all stash entries.
-func (r *Runner) StashList() ([]domain.StashEntry, error) {
+func (r *CLIRunner) StashList() ([]domain.StashEntry, error) {
 	out, err := r.Exec("stash", "list")
 	if err != nil {
 		return nil, fmt.Errorf("dolt stash list: %w", err)
@@ -53,14 +53,14 @@ func (r *Runner) StashList() ([]domain.StashEntry, error) {
 }
 
 // StashPop applies and removes a stash entry.
-func (r *Runner) StashPop(index int) error {
+func (r *CLIRunner) StashPop(index int) error {
 	ref := fmt.Sprintf("stash@{%d}", index)
 	_, err := r.Exec("stash", "pop", ref)
 	return err
 }
 
 // StashDrop removes a stash entry without applying it.
-func (r *Runner) StashDrop(index int) error {
+func (r *CLIRunner) StashDrop(index int) error {
 	ref := fmt.Sprintf("stash@{%d}", index)
 	_, err := r.Exec("stash", "drop", ref)
 	return err

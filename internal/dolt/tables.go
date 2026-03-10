@@ -9,7 +9,7 @@ import (
 )
 
 // Tables returns all tables in the working set with their status info.
-func (r *Runner) Tables() ([]domain.Table, error) {
+func (r *CLIRunner) Tables() ([]domain.Table, error) {
 	// Get table names via dolt ls (avoids information_schema quirks)
 	tableNames, err := r.listTableNames()
 	if err != nil {
@@ -55,7 +55,7 @@ func (r *Runner) Tables() ([]domain.Table, error) {
 }
 
 // listTableNames parses 'dolt ls' output for table names.
-func (r *Runner) listTableNames() ([]string, error) {
+func (r *CLIRunner) listTableNames() ([]string, error) {
 	out, err := r.Exec("ls")
 	if err != nil {
 		return nil, fmt.Errorf("listing tables: %w", err)

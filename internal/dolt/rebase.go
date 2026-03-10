@@ -8,9 +8,9 @@ import (
 
 // Rebase rebases the current branch onto the given upstream branch.
 // Returns ErrMergeConflict if the rebase results in conflicts.
-func (r *Runner) Rebase(upstream string) (string, error) {
-	cmd := exec.Command(r.DoltPath, "rebase", upstream)
-	cmd.Dir = r.RepoDir
+func (r *CLIRunner) Rebase(upstream string) (string, error) {
+	cmd := exec.Command(r.doltPath, "rebase", upstream)
+	cmd.Dir = r.repoDir
 	out, err := cmd.CombinedOutput()
 	text := stripANSI(string(out))
 	cmdStr := "dolt rebase " + upstream
@@ -29,15 +29,15 @@ func (r *Runner) Rebase(upstream string) (string, error) {
 }
 
 // RebaseAbort aborts an in-progress rebase.
-func (r *Runner) RebaseAbort() error {
+func (r *CLIRunner) RebaseAbort() error {
 	_, err := r.Exec("rebase", "--abort")
 	return err
 }
 
 // RebaseContinue continues a rebase after conflict resolution.
-func (r *Runner) RebaseContinue() (string, error) {
-	cmd := exec.Command(r.DoltPath, "rebase", "--continue")
-	cmd.Dir = r.RepoDir
+func (r *CLIRunner) RebaseContinue() (string, error) {
+	cmd := exec.Command(r.doltPath, "rebase", "--continue")
+	cmd.Dir = r.repoDir
 	out, err := cmd.CombinedOutput()
 	text := stripANSI(string(out))
 	cmdStr := "dolt rebase --continue"

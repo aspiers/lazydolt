@@ -55,21 +55,21 @@ func TestStripANSI(t *testing.T) {
 	}
 }
 
-func TestNewRunner_ValidRepo(t *testing.T) {
+func TestNewCLIRunner_ValidRepo(t *testing.T) {
 	repo := testutil.NewDoltTestRepo(t)
-	runner, err := NewRunner(repo.Dir)
+	runner, err := NewCLIRunner(repo.Dir)
 	if err != nil {
-		t.Fatalf("NewRunner(%q): %v", repo.Dir, err)
+		t.Fatalf("NewCLIRunner(%q): %v", repo.Dir, err)
 	}
-	if runner.RepoDir != repo.Dir {
-		t.Errorf("RepoDir = %q, want %q", runner.RepoDir, repo.Dir)
+	if runner.RepoDir() != repo.Dir {
+		t.Errorf("RepoDir() = %q, want %q", runner.RepoDir(), repo.Dir)
 	}
 }
 
-func TestNewRunner_InvalidDir(t *testing.T) {
-	_, err := NewRunner("/nonexistent/path/to/nowhere")
+func TestNewCLIRunner_InvalidDir(t *testing.T) {
+	_, err := NewCLIRunner("/nonexistent/path/to/nowhere")
 	if err == nil {
-		t.Error("NewRunner with invalid dir should return error")
+		t.Error("NewCLIRunner with invalid dir should return error")
 	}
 }
 

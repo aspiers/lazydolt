@@ -17,7 +17,7 @@ const (
 
 // Branches returns all branches sorted by the given order.
 // If order is empty, it defaults to BranchOrderByDate.
-func (r *Runner) Branches(order BranchOrderBy) ([]domain.Branch, error) {
+func (r *CLIRunner) Branches(order BranchOrderBy) ([]domain.Branch, error) {
 	if order == "" {
 		order = BranchOrderByDate
 	}

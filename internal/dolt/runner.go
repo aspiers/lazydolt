@@ -18,18 +18,24 @@ import (
 // ansiRegex strips ANSI escape codes from dolt output.
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// Runner executes dolt CLI commands against a repository directory.
-type Runner struct {
-	DoltPath string // path to dolt binary
-	RepoDir  string // working directory for commands
+// CLIRunner executes dolt CLI commands against a repository directory
+// by spawning dolt subprocesses. It implements the Runner interface.
+type CLIRunner struct {
+	doltPath string // path to dolt binary
+	repoDir  string // working directory for commands
 
 	logMu  sync.Mutex
 	cmdLog []domain.CommandLogEntry
 }
 
-// NewRunner creates a Runner for the given repository directory.
+// RepoDir returns the absolute path to the dolt repository.
+func (r *CLIRunner) RepoDir() string {
+	return r.repoDir
+}
+
+// NewCLIRunner creates a CLIRunner for the given repository directory.
 // It verifies that the dolt binary exists and the directory is a dolt repo.
-func NewRunner(repoDir string) (*Runner, error) {
+func NewCLIRunner(repoDir string) (*CLIRunner, error) {
 	doltPath, err := exec.LookPath("dolt")
 	if err != nil {
 		return nil, fmt.Errorf("dolt not found in PATH: %w", err)
@@ -46,29 +52,29 @@ func NewRunner(repoDir string) (*Runner, error) {
 		return nil, fmt.Errorf("%q is not a dolt repository (no .dolt directory)", absDir)
 	}
 
-	return &Runner{
-		DoltPath: doltPath,
-		RepoDir:  absDir,
+	return &CLIRunner{
+		doltPath: doltPath,
+		repoDir:  absDir,
 	}, nil
 }
 
 // Exec runs a dolt CLI command and returns stdout with ANSI codes stripped.
 // Returns an error containing stderr on non-zero exit.
-func (r *Runner) Exec(args ...string) (string, error) {
+func (r *CLIRunner) Exec(args ...string) (string, error) {
 	return r.exec(args, true)
 }
 
 // ExecRaw runs a dolt CLI command and returns stdout without stripping
 // ANSI codes. Use this for commands whose output is known to be
 // ANSI-free (e.g. JSON output from "dolt sql -r json").
-func (r *Runner) ExecRaw(args ...string) (string, error) {
+func (r *CLIRunner) ExecRaw(args ...string) (string, error) {
 	return r.exec(args, false)
 }
 
 // exec is the shared implementation for Exec and ExecRaw.
-func (r *Runner) exec(args []string, stripANSICodes bool) (string, error) {
-	cmd := exec.Command(r.DoltPath, args...)
-	cmd.Dir = r.RepoDir
+func (r *CLIRunner) exec(args []string, stripANSICodes bool) (string, error) {
+	cmd := exec.Command(r.doltPath, args...)
+	cmd.Dir = r.repoDir
 	cmdStr := "dolt " + strings.Join(args, " ")
 
 	out, err := cmd.Output()
@@ -92,7 +98,7 @@ func (r *Runner) exec(args []string, stripANSICodes bool) (string, error) {
 }
 
 // logCommand records a command execution in the internal log.
-func (r *Runner) logCommand(cmd, output string, isErr bool) {
+func (r *CLIRunner) logCommand(cmd, output string, isErr bool) {
 	r.logMu.Lock()
 	defer r.logMu.Unlock()
 	r.cmdLog = append(r.cmdLog, domain.CommandLogEntry{
@@ -108,7 +114,7 @@ func (r *Runner) logCommand(cmd, output string, isErr bool) {
 }
 
 // CommandLog returns a copy of all recorded command log entries.
-func (r *Runner) CommandLog() []domain.CommandLogEntry {
+func (r *CLIRunner) CommandLog() []domain.CommandLogEntry {
 	r.logMu.Lock()
 	defer r.logMu.Unlock()
 	result := make([]domain.CommandLogEntry, len(r.cmdLog))
@@ -118,7 +124,7 @@ func (r *Runner) CommandLog() []domain.CommandLogEntry {
 
 // SQL runs a SQL query via 'dolt sql -r json' and returns parsed rows.
 // Dolt returns JSON like {"rows": [{...}, {...}]} or {} for empty results.
-func (r *Runner) SQL(query string) ([]map[string]interface{}, error) {
+func (r *CLIRunner) SQL(query string) ([]map[string]interface{}, error) {
 	out, err := r.ExecRaw("sql", "-r", "json", "-q", query)
 	if err != nil {
 		return nil, err
@@ -142,13 +148,13 @@ func (r *Runner) SQL(query string) ([]map[string]interface{}, error) {
 // SQLRaw runs a SQL query via 'dolt sql -r tabular' and returns the
 // human-readable tabular output as a string. Useful for displaying
 // arbitrary query results to the user.
-func (r *Runner) SQLRaw(query string) (string, error) {
+func (r *CLIRunner) SQLRaw(query string) (string, error) {
 	return r.Exec("sql", "-r", "tabular", "-q", query)
 }
 
 // DiffStatBetween returns per-table change statistics between two revisions
 // using the dolt_diff_stat SQL function.
-func (r *Runner) DiffStatBetween(fromRef, toRef string) ([]domain.DiffStatEntry, error) {
+func (r *CLIRunner) DiffStatBetween(fromRef, toRef string) ([]domain.DiffStatEntry, error) {
 	query := fmt.Sprintf(
 		`SELECT table_name, rows_added, rows_deleted, rows_modified FROM dolt_diff_stat(%q, %q)`,
 		fromRef, toRef,

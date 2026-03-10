@@ -18,44 +18,44 @@ var ErrMergeConflict = errors.New("merge conflict")
 var commitHashRegex = regexp.MustCompile(`commit\s+([a-z0-9]+)`)
 
 // Add stages a table for commit.
-func (r *Runner) Add(table string) error {
+func (r *CLIRunner) Add(table string) error {
 	_, err := r.Exec("add", table)
 	return err
 }
 
 // AddAll stages all changed tables.
-func (r *Runner) AddAll() error {
+func (r *CLIRunner) AddAll() error {
 	_, err := r.Exec("add", ".")
 	return err
 }
 
 // Reset unstages a table.
-func (r *Runner) Reset(table string) error {
+func (r *CLIRunner) Reset(table string) error {
 	_, err := r.Exec("reset", table)
 	return err
 }
 
 // ResetAll unstages all tables.
-func (r *Runner) ResetAll() error {
+func (r *CLIRunner) ResetAll() error {
 	_, err := r.Exec("reset")
 	return err
 }
 
 // ResetSoft moves HEAD to the given commit, keeping working changes.
-func (r *Runner) ResetSoft(commit string) error {
+func (r *CLIRunner) ResetSoft(commit string) error {
 	_, err := r.Exec("reset", "--soft", commit)
 	return err
 }
 
 // ResetHard moves HEAD to the given commit and discards all changes.
-func (r *Runner) ResetHard(commit string) error {
+func (r *CLIRunner) ResetHard(commit string) error {
 	_, err := r.Exec("reset", "--hard", commit)
 	return err
 }
 
 // Commit creates a new commit with the given message.
 // Returns the commit hash on success.
-func (r *Runner) Commit(message string) (string, error) {
+func (r *CLIRunner) Commit(message string) (string, error) {
 	out, err := r.Exec("commit", "-m", message)
 	if err != nil {
 		if strings.Contains(err.Error(), "nothing to commit") {
@@ -75,28 +75,28 @@ func (r *Runner) Commit(message string) (string, error) {
 }
 
 // Push pushes the current branch to the remote.
-func (r *Runner) Push() (string, error) {
+func (r *CLIRunner) Push() (string, error) {
 	return r.Exec("push")
 }
 
 // Pull fetches and merges from the remote.
-func (r *Runner) Pull() (string, error) {
+func (r *CLIRunner) Pull() (string, error) {
 	return r.Exec("pull")
 }
 
 // Fetch downloads objects and refs from the remote.
-func (r *Runner) Fetch() (string, error) {
+func (r *CLIRunner) Fetch() (string, error) {
 	return r.Exec("fetch")
 }
 
 // CheckoutTable restores a table to its HEAD state, discarding changes.
-func (r *Runner) CheckoutTable(table string) error {
+func (r *CLIRunner) CheckoutTable(table string) error {
 	_, err := r.Exec("checkout", table)
 	return err
 }
 
 // CommitAmend amends the last commit with staged changes and a new message.
-func (r *Runner) CommitAmend(message string) (string, error) {
+func (r *CLIRunner) CommitAmend(message string) (string, error) {
 	out, err := r.Exec("commit", "--amend", "-m", message)
 	if err != nil {
 		return "", err
@@ -109,64 +109,64 @@ func (r *Runner) CommitAmend(message string) (string, error) {
 }
 
 // Checkout switches to the given branch.
-func (r *Runner) Checkout(branch string) error {
+func (r *CLIRunner) Checkout(branch string) error {
 	_, err := r.Exec("checkout", branch)
 	return err
 }
 
 // NewBranch creates a new branch from the current HEAD.
-func (r *Runner) NewBranch(name string) error {
+func (r *CLIRunner) NewBranch(name string) error {
 	_, err := r.Exec("branch", name)
 	return err
 }
 
 // RenameBranch renames a branch.
-func (r *Runner) RenameBranch(oldName, newName string) error {
+func (r *CLIRunner) RenameBranch(oldName, newName string) error {
 	_, err := r.Exec("branch", "-m", oldName, newName)
 	return err
 }
 
 // DeleteBranch deletes a branch.
-func (r *Runner) DeleteBranch(name string) error {
+func (r *CLIRunner) DeleteBranch(name string) error {
 	_, err := r.Exec("branch", "-d", name)
 	return err
 }
 
 // Merge merges the given branch into the current branch.
 // Returns ErrMergeConflict if the merge results in conflicts.
-func (r *Runner) Merge(branch string) (string, error) {
+func (r *CLIRunner) Merge(branch string) (string, error) {
 	return r.mergeWithConflictDetection("merge", branch)
 }
 
 // MergeSquash merges the given branch into the current branch as a squash.
-func (r *Runner) MergeSquash(branch string) (string, error) {
+func (r *CLIRunner) MergeSquash(branch string) (string, error) {
 	return r.Exec("merge", "--squash", branch)
 }
 
 // CherryPick applies the changes from the given commit onto the current branch.
 // Returns ErrMergeConflict if the cherry-pick results in conflicts.
 // Requires a clean working tree.
-func (r *Runner) CherryPick(hash string) (string, error) {
+func (r *CLIRunner) CherryPick(hash string) (string, error) {
 	return r.mergeWithConflictDetection("cherry-pick", hash)
 }
 
 // CherryPickAbort aborts an in-progress cherry-pick.
-func (r *Runner) CherryPickAbort() error {
+func (r *CLIRunner) CherryPickAbort() error {
 	_, err := r.Exec("cherry-pick", "--abort")
 	return err
 }
 
 // Revert creates a new commit that undoes the changes from the given commit.
 // Requires a clean working tree.
-func (r *Runner) Revert(hash string) (string, error) {
+func (r *CLIRunner) Revert(hash string) (string, error) {
 	return r.Exec("revert", hash)
 }
 
 // mergeWithConflictDetection runs a merge and detects conflicts
 // by checking for "CONFLICT" in the stdout output.
-func (r *Runner) mergeWithConflictDetection(args ...string) (string, error) {
-	cmd := exec.Command(r.DoltPath, args...)
-	cmd.Dir = r.RepoDir
+func (r *CLIRunner) mergeWithConflictDetection(args ...string) (string, error) {
+	cmd := exec.Command(r.doltPath, args...)
+	cmd.Dir = r.repoDir
 	out, err := cmd.CombinedOutput()
 	text := stripANSI(string(out))
 	if err != nil && strings.Contains(text, "CONFLICT") {

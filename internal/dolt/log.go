@@ -36,7 +36,7 @@ func (f CommitFilter) IsEmpty() bool {
 // If order is empty, it defaults to CommitOrderByDateDesc.
 // If filter is non-empty, matching WHERE clauses are added.
 // Each commit includes its parent hashes from dolt_commit_ancestors.
-func (r *Runner) Log(branch string, limit int, order CommitOrderBy, filters ...CommitFilter) ([]domain.Commit, error) {
+func (r *CLIRunner) Log(branch string, limit int, order CommitOrderBy, filters ...CommitFilter) ([]domain.Commit, error) {
 	if order == "" {
 		order = CommitOrderByDateDesc
 	}

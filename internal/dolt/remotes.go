@@ -8,7 +8,7 @@ import (
 )
 
 // Remotes returns the list of configured remotes.
-func (r *Runner) Remotes() ([]domain.Remote, error) {
+func (r *CLIRunner) Remotes() ([]domain.Remote, error) {
 	out, err := r.Exec("remote", "-v")
 	if err != nil {
 		return nil, fmt.Errorf("listing remotes: %w", err)
@@ -45,13 +45,13 @@ func (r *Runner) Remotes() ([]domain.Remote, error) {
 }
 
 // RemoteAdd adds a new remote with the given name and URL.
-func (r *Runner) RemoteAdd(name, url string) error {
+func (r *CLIRunner) RemoteAdd(name, url string) error {
 	_, err := r.Exec("remote", "add", name, url)
 	return err
 }
 
 // RemoteRemove removes a remote by name.
-func (r *Runner) RemoteRemove(name string) error {
+func (r *CLIRunner) RemoteRemove(name string) error {
 	_, err := r.Exec("remote", "remove", name)
 	return err
 }

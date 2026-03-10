@@ -8,7 +8,7 @@ import (
 )
 
 // Schema returns the CREATE TABLE statement for a table.
-func (r *Runner) Schema(table string) (domain.Schema, error) {
+func (r *CLIRunner) Schema(table string) (domain.Schema, error) {
 	out, err := r.Exec("schema", "show", table)
 	if err != nil {
 		return domain.Schema{}, fmt.Errorf("schema for %q: %w", table, err)

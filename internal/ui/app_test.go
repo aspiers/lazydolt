@@ -23,9 +23,9 @@ func newTestApp(t testing.TB) App {
 	t.Helper()
 	repo := testutil.NewDoltTestRepo(t)
 	testutil.PopulateTestData(repo)
-	runner, err := dolt.NewRunner(repo.Dir)
+	runner, err := dolt.NewCLIRunner(repo.Dir)
 	if err != nil {
-		t.Fatalf("NewRunner: %v", err)
+		t.Fatalf("NewCLIRunner: %v", err)
 	}
 	return NewApp(runner)
 }

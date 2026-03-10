@@ -16,7 +16,7 @@ func main() {
 		dir = os.Args[1]
 	}
 
-	runner, err := dolt.NewRunner(dir)
+	runner, err := dolt.NewCLIRunner(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

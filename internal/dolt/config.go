@@ -13,7 +13,7 @@ type ConfigEntry struct {
 
 // Config returns the merged global and local dolt configuration.
 // Global entries appear first, then local entries.
-func (r *Runner) Config() (global []ConfigEntry, local []ConfigEntry, err error) {
+func (r *CLIRunner) Config() (global []ConfigEntry, local []ConfigEntry, err error) {
 	globalOut, gerr := r.Exec("config", "--global", "--list")
 	if gerr != nil {
 		// No global config is not an error
@@ -31,7 +31,7 @@ func (r *Runner) Config() (global []ConfigEntry, local []ConfigEntry, err error)
 }
 
 // ConfigSet sets a config value at the specified scope.
-func (r *Runner) ConfigSet(global bool, key, value string) error {
+func (r *CLIRunner) ConfigSet(global bool, key, value string) error {
 	args := []string{"config"}
 	if global {
 		args = append(args, "--global")

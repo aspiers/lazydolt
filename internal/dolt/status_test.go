@@ -6,12 +6,12 @@ import (
 	"github.com/aspiers/lazydolt/internal/testutil"
 )
 
-func newTestRunner(t *testing.T) (*Runner, *testutil.DoltTestRepo) {
+func newTestRunner(t *testing.T) (*CLIRunner, *testutil.DoltTestRepo) {
 	t.Helper()
 	repo := testutil.NewDoltTestRepo(t)
-	runner, err := NewRunner(repo.Dir)
+	runner, err := NewCLIRunner(repo.Dir)
 	if err != nil {
-		t.Fatalf("NewRunner(%q): %v", repo.Dir, err)
+		t.Fatalf("NewCLIRunner(%q): %v", repo.Dir, err)
 	}
 	return runner, repo
 }

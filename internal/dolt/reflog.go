@@ -12,12 +12,12 @@ import (
 var reflogRegex = regexp.MustCompile(`^(\S+)\s+\(([^)]+)\)\s+(.*)$`)
 
 // Reflog returns the raw reflog output showing the history of named refs.
-func (r *Runner) Reflog() (string, error) {
+func (r *CLIRunner) Reflog() (string, error) {
 	return r.Exec("reflog")
 }
 
 // ReflogEntries returns the reflog as structured entries.
-func (r *Runner) ReflogEntries() ([]domain.ReflogEntry, error) {
+func (r *CLIRunner) ReflogEntries() ([]domain.ReflogEntry, error) {
 	raw, err := r.Reflog()
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func (r *Runner) ReflogEntries() ([]domain.ReflogEntry, error) {
 }
 
 // HeadHash returns the current HEAD commit hash via dolt_hashof('HEAD').
-func (r *Runner) HeadHash() (string, error) {
+func (r *CLIRunner) HeadHash() (string, error) {
 	rows, err := r.SQL("SELECT dolt_hashof('HEAD') AS hash")
 	if err != nil {
 		return "", err
