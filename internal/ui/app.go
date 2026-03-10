@@ -531,16 +531,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.helpFilter.Reset()
 				a.helpFilter.Blur()
 				return a, nil
-			case "j", "down":
+			case "ctrl+j", "ctrl+n":
 				a.helpViewport.LineDown(1)
 				return a, nil
-			case "k", "up":
+			case "ctrl+k", "ctrl+p":
 				a.helpViewport.LineUp(1)
 				return a, nil
-			case "pgdown":
+			case "ctrl+d":
+				a.helpViewport.HalfViewDown()
+				return a, nil
+			case "ctrl+u":
+				a.helpViewport.HalfViewUp()
+				return a, nil
+			case "ctrl+f":
 				a.helpViewport.ViewDown()
 				return a, nil
-			case "pgup":
+			case "ctrl+b":
 				a.helpViewport.ViewUp()
 				return a, nil
 			case "home":
@@ -1260,6 +1266,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Sync command log entries so the viewport has real content for scrolling.
+	if entries := a.runner.CommandLog(); len(entries) != len(a.logView.Entries) {
+		a.logView.Entries = entries
+		a.logView.RefreshContent()
+	}
+
 	return a, tea.Batch(cmds...)
 }
 
@@ -1328,9 +1340,7 @@ func (a App) View() string {
 		}
 		mainBox := strings.Join(mainLines, "\n")
 
-		// Command log pane
-		a.logView.Entries = a.runner.CommandLog()
-		a.logView.RefreshContent()
+		// Command log pane — entries are synced in Update(); just set size for rendering.
 		a.logView.SetSize(mainInnerW, logPaneInnerHHalf)
 		logFocused := a.focused == components.PanelLog
 		logTitle := fmt.Sprintf("[5]─Command Log (%d)", len(a.logView.Entries))
@@ -1472,9 +1482,7 @@ func (a App) View() string {
 			}
 			mainBox := strings.Join(mainLines, "\n")
 
-			// Command log pane — always visible below main panel
-			a.logView.Entries = a.runner.CommandLog()
-			a.logView.RefreshContent()
+			// Command log pane — entries are synced in Update(); just set size for rendering.
 			a.logView.SetSize(mainInnerW, logPaneInnerH)
 			logFocused := a.focused == components.PanelLog
 			logTitle := fmt.Sprintf("[5]─Command Log (%d)", len(a.logView.Entries))
@@ -2906,10 +2914,7 @@ func (a App) overlayUndoRedoDialog(base, action string, entry domain.UndoEntry) 
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- SQL query dialog ---
@@ -2998,10 +3003,7 @@ func (a App) overlaySQLDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Commit dialog ---
@@ -3106,10 +3108,7 @@ func (a App) overlayCommitDialog(base string) string {
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
 	// Center the dialog
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- New branch dialog ---
@@ -3164,10 +3163,7 @@ func (a App) overlayNewBranchDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Rename branch dialog ---
@@ -3228,10 +3224,7 @@ func (a App) overlayRenameBranchDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Delete branch confirmation ---
@@ -3273,10 +3266,7 @@ func (a App) overlayDeleteBranchConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Discard confirmation ---
@@ -3318,10 +3308,7 @@ func (a App) overlayDiscardConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Reset menu ---
@@ -3376,10 +3363,7 @@ func (a App) overlayResetMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Hard reset confirmation ---
@@ -3430,10 +3414,7 @@ func (a App) overlayHardResetConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Merge menu ---
@@ -3485,10 +3466,7 @@ func (a App) overlayMergeMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Rebase confirmation ---
@@ -3531,10 +3509,7 @@ func (a App) overlayRebaseConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Cherry-pick confirmation ---
@@ -3585,10 +3560,7 @@ func (a App) overlayCherryPickConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Revert confirmation ---
@@ -3637,10 +3609,7 @@ func (a App) overlayRevertConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Tag dialog ---
@@ -3697,10 +3666,7 @@ func (a App) overlayTagDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Delete tag confirmation ---
@@ -3741,10 +3707,7 @@ func (a App) overlayDeleteTagConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Add remote dialog ---
@@ -3841,10 +3804,7 @@ func (a App) overlayAddRemoteDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Delete remote confirmation ---
@@ -3885,10 +3845,7 @@ func (a App) overlayDeleteRemoteConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Table operations menu ---
@@ -3969,10 +3926,7 @@ func (a App) overlayTableOpsMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Sort menu for branches and commits ---
@@ -4053,10 +4007,7 @@ func (a App) overlaySortMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Database export menu ---
@@ -4155,10 +4106,7 @@ func (a App) overlayExportMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 func (a App) overlayExportInput(base string) string {
@@ -4175,10 +4123,7 @@ func (a App) overlayExportInput(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Commit filter menu ---
@@ -4291,10 +4236,7 @@ func (a App) overlayCommitFilterMenu(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 func (a App) overlayCommitFilterInput(base string) string {
@@ -4316,10 +4258,7 @@ func (a App) overlayCommitFilterInput(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Config viewer ---
@@ -4495,10 +4434,7 @@ func (a App) overlayConfigViewer(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 func (a App) overlayConfigEdit(base string) string {
@@ -4520,10 +4456,7 @@ func (a App) overlayConfigEdit(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Query diff ---
@@ -4677,10 +4610,7 @@ func (a App) overlayQueryDiff(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Table rename/copy/export input dialog ---
@@ -4768,10 +4698,7 @@ func (a App) overlayTableInputDialog(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Table drop confirmation ---
@@ -4810,10 +4737,7 @@ func (a App) overlayTableDropConfirm(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Stash List ---
@@ -4887,10 +4811,7 @@ func (a App) overlayStashList(base string) string {
 
 	dialog := commitBoxStyle.Width(dialogW).Render(content)
 
-	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, dialog,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")),
-	)
+	return placeOverlay(a.width, a.height, dialog, base)
 }
 
 // --- Commit detail tables ---
@@ -5197,6 +5118,77 @@ func abs(x int) int {
 	return x
 }
 
+// placeOverlay composites a dialog box centered on top of a base screen.
+// Unlike lipgloss.Place which fills with whitespace, this preserves the
+// base content visible around the dialog.
+func placeOverlay(width, height int, dialog, base string) string {
+	dialogLines := strings.Split(dialog, "\n")
+	baseLines := strings.Split(base, "\n")
+
+	// Pad base to fill the full screen.
+	for len(baseLines) < height {
+		baseLines = append(baseLines, "")
+	}
+
+	dialogH := len(dialogLines)
+	dialogW := 0
+	for _, line := range dialogLines {
+		if w := ansi.StringWidth(line); w > dialogW {
+			dialogW = w
+		}
+	}
+
+	// Center the dialog.
+	startY := (height - dialogH) / 2
+	startX := (width - dialogW) / 2
+	if startY < 0 {
+		startY = 0
+	}
+	if startX < 0 {
+		startX = 0
+	}
+
+	result := make([]string, len(baseLines))
+	for i, baseLine := range baseLines {
+		if i < startY || i >= startY+dialogH {
+			result[i] = baseLine
+			continue
+		}
+		dIdx := i - startY
+		dLine := dialogLines[dIdx]
+		dLineW := ansi.StringWidth(dLine)
+
+		// Build: [left portion of base] [dialog line] [right portion of base]
+		baseW := ansi.StringWidth(baseLine)
+
+		var sb strings.Builder
+
+		// Left part: truncate base to startX visible columns.
+		if startX > 0 {
+			sb.WriteString(ansi.Truncate(baseLine, startX, ""))
+			// Pad if base line is shorter than startX.
+			leftW := ansi.StringWidth(ansi.Truncate(baseLine, startX, ""))
+			if leftW < startX {
+				sb.WriteString(strings.Repeat(" ", startX-leftW))
+			}
+		}
+
+		// Dialog line.
+		sb.WriteString(dLine)
+
+		// Right part: skip (startX + dLineW) visible columns from base.
+		rightStart := startX + dLineW
+		if rightStart < baseW {
+			// We need to cut the first rightStart visible chars from baseLine.
+			sb.WriteString(ansi.TruncateLeft(baseLine, rightStart, ""))
+		}
+
+		result[i] = sb.String()
+	}
+
+	return strings.Join(result, "\n")
+}
+
 // --- Help ---
 
 // helpBindings is the structured list of keybindings for the help overlay.
@@ -5262,13 +5254,15 @@ var helpBindings = []struct{ Section, Key, Desc string }{
 	{"Commits Panel", "l", "View reflog"},
 	{"Main Panel [4]", "j/k", "Scroll up/down"},
 	{"Main Panel [4]", "h/l", "Scroll left/right"},
-	{"Main Panel [4]", "PgUp/PgDn", "Page up/down"},
+	{"Main Panel [4]", "Space/Bksp", "Page down/up"},
+	{"Main Panel [4]", "f/b", "Page down/up"},
 	{"Main Panel [4]", "u/d", "Half page up/down"},
 	{"Main Panel [4]", "s", "Toggle schema diff"},
 	{"Main Panel [4]", "w", "Toggle diff statistics"},
 	{"Command Log [5]", "j/k", "Scroll up/down"},
 	{"Command Log [5]", "h/l", "Scroll left/right"},
-	{"Command Log [5]", "PgUp/PgDn", "Page up/down"},
+	{"Command Log [5]", "Space/Bksp", "Page down/up"},
+	{"Command Log [5]", "f/b", "Page down/up"},
 	{"Command Log [5]", "u/d", "Half page up/down"},
 }
 
@@ -5307,19 +5301,77 @@ func filteredHelpSections(filter string) ([]helpSection, int) {
 }
 
 // renderHelpSection renders one section block as a string.
-func renderHelpSection(s helpSection) string {
+// colWidth is the total column width; descriptions that would overflow
+// are word-wrapped with continuation lines indented to the description column.
+func renderHelpSection(s helpSection, colWidth int) string {
+	const indent = 2             // left indent before key
+	const keyField = 14          // fixed width for key column
+	descCol := indent + keyField // column where description text starts
+
 	var sb strings.Builder
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(s.Name))
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")).Render(s.Name))
 	sb.WriteString("\n")
 	for _, b := range s.Bindings {
-		sb.WriteString(fmt.Sprintf("  %-14s%s\n", b.Key, b.Desc))
+		prefix := fmt.Sprintf("  %-14s", b.Key)
+		descWidth := colWidth - descCol
+		if descWidth < 10 {
+			descWidth = 10
+		}
+		wrapped := wrapText(b.Desc, descWidth)
+		lines := strings.Split(wrapped, "\n")
+		sb.WriteString(prefix)
+		sb.WriteString(lines[0])
+		sb.WriteString("\n")
+		for _, cont := range lines[1:] {
+			sb.WriteString(strings.Repeat(" ", descCol))
+			sb.WriteString(cont)
+			sb.WriteString("\n")
+		}
 	}
 	return sb.String()
 }
 
-// sectionHeight returns the number of lines a section takes (header + bindings).
-func sectionHeight(s helpSection) int {
-	return 1 + len(s.Bindings) // header line + one line per binding
+// wrapText wraps s to fit within width characters, breaking at word boundaries.
+func wrapText(s string, width int) string {
+	if width <= 0 || len(s) <= width {
+		return s
+	}
+	var sb strings.Builder
+	lineLen := 0
+	for i, word := range strings.Fields(s) {
+		wl := len(word)
+		if i == 0 {
+			sb.WriteString(word)
+			lineLen = wl
+			continue
+		}
+		if lineLen+1+wl > width {
+			sb.WriteString("\n")
+			sb.WriteString(word)
+			lineLen = wl
+		} else {
+			sb.WriteString(" ")
+			sb.WriteString(word)
+			lineLen += 1 + wl
+		}
+	}
+	return sb.String()
+}
+
+// sectionHeight returns the number of lines a section takes (header + bindings),
+// accounting for descriptions that wrap within the given column width.
+func sectionHeight(s helpSection, colWidth int) int {
+	const descCol = 16 // indent(2) + keyField(14)
+	descWidth := colWidth - descCol
+	if descWidth < 10 {
+		descWidth = 10
+	}
+	lines := 1 // header line
+	for _, b := range s.Bindings {
+		wrapped := wrapText(b.Desc, descWidth)
+		lines += strings.Count(wrapped, "\n") + 1
+	}
+	return lines
 }
 
 // renderHelpColumns lays out sections across columns, balancing height.
@@ -5328,10 +5380,16 @@ func renderHelpColumns(sections []helpSection, colCount, colWidth int) string {
 		return ""
 	}
 
+	// Content width leaves a gap between columns so text doesn't run together.
+	contentWidth := colWidth
+	if colCount > 1 {
+		contentWidth = colWidth - 2
+	}
+
 	// Calculate total height across all sections (including gaps between them).
 	totalH := 0
 	for _, s := range sections {
-		totalH += sectionHeight(s) + 1 // +1 for blank line between sections
+		totalH += sectionHeight(s, contentWidth) + 1 // +1 for blank line between sections
 	}
 	targetH := (totalH + colCount - 1) / colCount
 
@@ -5340,7 +5398,7 @@ func renderHelpColumns(sections []helpSection, colCount, colWidth int) string {
 	colHeights := make([]int, colCount)
 	col := 0
 	for _, s := range sections {
-		sh := sectionHeight(s) + 1
+		sh := sectionHeight(s, contentWidth) + 1
 		if col < colCount-1 && colHeights[col] > 0 && colHeights[col]+sh > targetH+2 {
 			col++
 		}
@@ -5354,7 +5412,7 @@ func renderHelpColumns(sections []helpSection, colCount, colWidth int) string {
 	for i, colSections := range columns {
 		var parts []string
 		for _, s := range colSections {
-			parts = append(parts, renderHelpSection(s))
+			parts = append(parts, renderHelpSection(s, contentWidth))
 		}
 		rendered[i] = colStyle.Render(strings.Join(parts, "\n"))
 	}
@@ -5363,16 +5421,15 @@ func renderHelpColumns(sections []helpSection, colCount, colWidth int) string {
 }
 
 // helpLayout computes dialog and column dimensions for the help overlay.
+// The help panel uses the full terminal width (border + padding only).
 func (a App) helpLayout() (dialogW, innerW, colCount, colWidth int) {
-	dialogW = a.width - 6
+	// Full-screen: border (1 each side) = 2, padding (1 each side) = 2, total = 4.
+	dialogW = a.width - 2 // leave 1 char margin each side for the border
 	if dialogW < 40 {
 		dialogW = 40
 	}
-	if dialogW > a.width-4 {
-		dialogW = a.width - 4
-	}
-	// Inner width after box padding (2 chars each side) and border (1 each side).
-	innerW = dialogW - 6
+	// Inner width after border (1+1) and padding (1+1) = 4.
+	innerW = dialogW - 4
 
 	colCount = 1
 	if innerW >= 110 {
@@ -5388,9 +5445,9 @@ func (a App) helpLayout() (dialogW, innerW, colCount, colWidth int) {
 func (a App) helpViewportHeight() int {
 	// header: title + blank + filter + blank = 4 lines
 	// footer: blank + hint = 2 lines
-	// box: border=2 rows, padding=2 rows
+	// box: border=2 rows, padding (1 top + 1 bottom)=2 rows
 	overhead := 2 + 2 + 4 + 2
-	vpH := (a.height - 4) - overhead
+	vpH := a.height - overhead
 	if vpH < 3 {
 		vpH = 3
 	}
@@ -5425,12 +5482,16 @@ func (a App) renderHelp() string {
 
 	// Footer.
 	scrollHint := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).
-		Render("j/k scroll · PgUp/PgDn page · ? or Esc to close")
+		Render("C-n/C-p line · C-d/C-u half page · C-f/C-b page · ? or Esc to close")
 
 	// Assemble: header + viewport + footer.
 	content := header + a.helpViewport.View() + "\n\n" + scrollHint
 
-	box := commitBoxStyle.Width(dialogW).Render(content)
+	helpBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("5")).
+		Padding(1, 1)
+	box := helpBoxStyle.Width(dialogW).Render(content)
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, box)
 }
 

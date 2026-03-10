@@ -27,9 +27,8 @@ type LogView struct {
 
 // NewLogView creates a new log viewer with the given dimensions.
 func NewLogView(width, height int) LogView {
-	vp := viewport.New(width, height)
+	vp := newViewport(width, height)
 	vp.SetContent("No commands executed yet")
-	vp.SetHorizontalStep(4)
 	return LogView{
 		Viewport: vp,
 		Ready:    true,
@@ -82,7 +81,10 @@ func (l *LogView) RefreshContent() {
 		sb.WriteString(" ")
 		sb.WriteString(logTimeStyle.Render(timeStr))
 		sb.WriteString(" ")
-		sb.WriteString(logCmdStyle.Render(entry.Command))
+		// Collapse multi-line commands (e.g. SQL queries) to single line
+		// so horizontal scrolling works for long commands.
+		cmd := strings.Join(strings.Fields(entry.Command), " ")
+		sb.WriteString(logCmdStyle.Render(cmd))
 
 		if entry.Error {
 			// Show error output (truncated to a few lines)

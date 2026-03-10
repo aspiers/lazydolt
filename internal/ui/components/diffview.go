@@ -3,10 +3,25 @@ package components
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// newViewport creates a viewport with the project's customized keymap.
+// Adds backspace as an additional page-up key alongside pgup/b.
+func newViewport(width, height int) viewport.Model {
+	vp := viewport.New(width, height)
+	km := viewport.DefaultKeyMap()
+	km.PageUp = key.NewBinding(
+		key.WithKeys("pgup", "b", "backspace"),
+		key.WithHelp("b/pgup", "page up"),
+	)
+	vp.KeyMap = km
+	vp.SetHorizontalStep(4)
+	return vp
+}
 
 var (
 	addedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
@@ -25,9 +40,8 @@ type DiffView struct {
 
 // NewDiffView creates a new diff viewer with the given dimensions.
 func NewDiffView(width, height int) DiffView {
-	vp := viewport.New(width, height)
+	vp := newViewport(width, height)
 	vp.SetContent("No changes to display")
-	vp.SetHorizontalStep(4)
 	return DiffView{
 		Viewport: vp,
 		Ready:    true,

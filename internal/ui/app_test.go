@@ -220,9 +220,9 @@ func TestApp_HelpOverlay(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	teatest.WaitFor(t, tm.Output(),
 		func(bts []byte) bool {
-			// Check for content visible in the help overlay
+			// Check for content visible in the help overlay header area
 			// (avoid text split by ANSI codes like the filter placeholder)
-			return bytes.Contains(bts, []byte("Toggle help"))
+			return bytes.Contains(bts, []byte("Keyboard Shortcuts"))
 		},
 		teatest.WithDuration(2*time.Second),
 	)
