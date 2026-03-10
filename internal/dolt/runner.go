@@ -55,6 +55,18 @@ func NewRunner(repoDir string) (*Runner, error) {
 // Exec runs a dolt CLI command and returns stdout with ANSI codes stripped.
 // Returns an error containing stderr on non-zero exit.
 func (r *Runner) Exec(args ...string) (string, error) {
+	return r.exec(args, true)
+}
+
+// ExecRaw runs a dolt CLI command and returns stdout without stripping
+// ANSI codes. Use this for commands whose output is known to be
+// ANSI-free (e.g. JSON output from "dolt sql -r json").
+func (r *Runner) ExecRaw(args ...string) (string, error) {
+	return r.exec(args, false)
+}
+
+// exec is the shared implementation for Exec and ExecRaw.
+func (r *Runner) exec(args []string, stripANSICodes bool) (string, error) {
 	cmd := exec.Command(r.DoltPath, args...)
 	cmd.Dir = r.RepoDir
 	cmdStr := "dolt " + strings.Join(args, " ")
@@ -71,7 +83,10 @@ func (r *Runner) Exec(args ...string) (string, error) {
 		return "", fmt.Errorf("%s: %s", cmdStr, errMsg)
 	}
 
-	result := stripANSI(string(out))
+	result := string(out)
+	if stripANSICodes {
+		result = stripANSI(result)
+	}
 	r.logCommand(cmdStr, result, false)
 	return result, nil
 }
@@ -104,7 +119,7 @@ func (r *Runner) CommandLog() []domain.CommandLogEntry {
 // SQL runs a SQL query via 'dolt sql -r json' and returns parsed rows.
 // Dolt returns JSON like {"rows": [{...}, {...}]} or {} for empty results.
 func (r *Runner) SQL(query string) ([]map[string]interface{}, error) {
-	out, err := r.Exec("sql", "-r", "json", "-q", query)
+	out, err := r.ExecRaw("sql", "-r", "json", "-q", query)
 	if err != nil {
 		return nil, err
 	}
