@@ -29,6 +29,16 @@ type CommitsModel struct {
 	Height  int
 	HScroll int    // horizontal scroll offset (columns)
 	Filter  string // case-insensitive substring filter
+
+	// Cached graph data — invalidated when commits change.
+	cachedGraph      []GraphLine
+	cachedGraphMaxW  int
+	cachedGraphCount int // len(Commits) when cache was built
+
+	// Cached filtered indices — invalidated when commits or filter change.
+	cachedFilteredIndices []int
+	cachedFilterStr       string // filter value when cache was built
+	cachedFilterCount     int    // len(Commits) when cache was built
 }
 
 // Init is a no-op.
@@ -95,10 +105,8 @@ func (m CommitsModel) View() string {
 
 	start, end := visibleRange(cursorPos, len(indices), m.Height)
 
-	// Build graph for all commits (not just visible ones) to get
-	// correct lane tracking, then use only the visible slice.
-	graphLines := BuildGraph(m.Commits)
-	maxGW := MaxGraphWidth(graphLines)
+	// Use cached graph data, rebuilding only when commits change.
+	graphLines, maxGW := m.graph()
 
 	var s string
 	for fi := start; fi < end; fi++ {
@@ -211,8 +219,19 @@ func (m CommitsModel) matchesFilter(c domain.Commit) bool {
 		strings.Contains(strings.ToLower(c.Hash), f)
 }
 
-// filteredIndices returns the indices of commits matching the filter.
+// filteredIndices returns the cached filtered indices, falling back to
+// recomputation if the cache is stale.
 func (m CommitsModel) filteredIndices() []int {
+	if m.cachedFilteredIndices != nil &&
+		m.cachedFilterStr == m.Filter &&
+		m.cachedFilterCount == len(m.Commits) {
+		return m.cachedFilteredIndices
+	}
+	return m.computeFilteredIndices()
+}
+
+// computeFilteredIndices computes the indices of commits matching the filter.
+func (m CommitsModel) computeFilteredIndices() []int {
 	var indices []int
 	for i, c := range m.Commits {
 		if m.matchesFilter(c) {
@@ -220,6 +239,41 @@ func (m CommitsModel) filteredIndices() []int {
 		}
 	}
 	return indices
+}
+
+// SetCommits updates the commits list and rebuilds all caches.
+// Use this instead of setting Commits directly to keep caches valid.
+func (m *CommitsModel) SetCommits(commits []domain.Commit) {
+	m.Commits = commits
+	m.cachedGraph = BuildGraph(commits)
+	m.cachedGraphMaxW = MaxGraphWidth(m.cachedGraph)
+	m.cachedGraphCount = len(commits)
+	m.rebuildFilteredIndices()
+}
+
+// SetFilter updates the filter string and rebuilds the filtered indices cache.
+func (m *CommitsModel) SetFilter(filter string) {
+	m.Filter = filter
+	m.rebuildFilteredIndices()
+}
+
+// rebuildFilteredIndices recomputes and caches the filtered indices.
+func (m *CommitsModel) rebuildFilteredIndices() {
+	m.cachedFilteredIndices = m.computeFilteredIndices()
+	m.cachedFilterStr = m.Filter
+	m.cachedFilterCount = len(m.Commits)
+}
+
+// graph returns the cached graph lines and max width.
+// Falls back to recomputing if the cache is stale (e.g. Commits was
+// set directly instead of via SetCommits).
+func (m CommitsModel) graph() ([]GraphLine, int) {
+	if m.cachedGraphCount == len(m.Commits) && m.cachedGraph != nil {
+		return m.cachedGraph, m.cachedGraphMaxW
+	}
+	// Stale cache — recompute (but can't persist since View is value receiver).
+	lines := BuildGraph(m.Commits)
+	return lines, MaxGraphWidth(lines)
 }
 
 // Message types for parent to handle.

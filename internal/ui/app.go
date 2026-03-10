@@ -501,7 +501,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.filterInput.Blur()
 				a.tables.Filter = ""
 				a.branches.Filter = ""
-				a.commits.Filter = ""
+				a.commits.SetFilter("")
 				return a, nil
 			case "enter":
 				// Confirm filter and return to navigation
@@ -519,7 +519,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case components.PanelBranches:
 					a.branches.Filter = f
 				case components.PanelCommits:
-					a.commits.Filter = f
+					a.commits.SetFilter(f)
 				}
 				return a, cmd
 			}
@@ -592,7 +592,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.tables.Filter != "" || a.branches.Filter != "" || a.commits.Filter != "" {
 				a.tables.Filter = ""
 				a.branches.Filter = ""
-				a.commits.Filter = ""
+				a.commits.SetFilter("")
 				a.filterInput.Reset()
 				return a, nil
 			}
@@ -968,7 +968,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.branches.Remotes = msg.Remotes
 		// Only update commits if not viewing a different branch
 		if a.viewingBranch == "" {
-			a.commits.Commits = msg.Commits
+			a.commits.SetCommits(msg.Commits)
 		}
 		a.clearFlash()
 		// Clamp cursors
@@ -1208,7 +1208,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewBranchMsg:
 		cmds = append(cmds, a.viewBranchCommits(msg.Branch))
 	case branchCommitsMsg:
-		a.commits.Commits = msg.Commits
+		a.commits.SetCommits(msg.Commits)
 		a.commits.Cursor = 0
 	case deleteBranchMsg:
 		a.showDeleteBranchConfirm = true
@@ -1947,7 +1947,7 @@ func (a *App) setFocus(p components.Panel) {
 	a.filterInput.Blur()
 	a.tables.Filter = ""
 	a.branches.Filter = ""
-	a.commits.Filter = ""
+	a.commits.SetFilter("")
 	a.focused = p
 	a.syncFocus()
 }
@@ -2012,10 +2012,6 @@ func (a *App) loadData() tea.Cmd {
 	commitOrder := a.commitSort.orderBy()
 	cFilter := a.commitFilter
 	return func() tea.Msg {
-		type branchResult struct {
-			branch string
-			err    error
-		}
 		type tablesResult struct {
 			tables []domain.Table
 			err    error
@@ -2037,17 +2033,12 @@ func (a *App) loadData() tea.Cmd {
 			err     error
 		}
 
-		branchCh := make(chan branchResult, 1)
 		tablesCh := make(chan tablesResult, 1)
 		branchesCh := make(chan branchesResult, 1)
 		commitsCh := make(chan commitsResult, 1)
 		tagsCh := make(chan tagsResult, 1)
 		remotesCh := make(chan remotesResult, 1)
 
-		go func() {
-			b, err := runner.CurrentBranch()
-			branchCh <- branchResult{b, err}
-		}()
 		go func() {
 			t, err := runner.Tables()
 			tablesCh <- tablesResult{t, err}
@@ -2069,12 +2060,21 @@ func (a *App) loadData() tea.Cmd {
 			remotesCh <- remotesResult{rm, err}
 		}()
 
-		brRes := <-branchCh
 		tblRes := <-tablesCh
 		brchRes := <-branchesCh
 		cmtRes := <-commitsCh
 		tagRes := <-tagsCh
 		rmtRes := <-remotesCh
+
+		// Extract current branch from Branches() result — it already
+		// calls CurrentBranch() internally, so no separate call needed.
+		currentBranch := ""
+		for _, b := range brchRes.branches {
+			if b.IsCurrent {
+				currentBranch = b.Name
+				break
+			}
+		}
 
 		// Derive dirty from tables — any table with a non-nil Status
 		// has uncommitted changes, avoiding a redundant Status() call.
@@ -2099,7 +2099,7 @@ func (a *App) loadData() tea.Cmd {
 		}
 
 		return DataLoadedMsg{
-			Branch:   brRes.branch,
+			Branch:   currentBranch,
 			Dirty:    dirty,
 			Tables:   tblRes.tables,
 			Branches: brchRes.branches,

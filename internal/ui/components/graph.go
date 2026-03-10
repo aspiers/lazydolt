@@ -22,6 +22,33 @@ const (
 // graphColors are the colors used for each lane, cycling through them.
 var graphColors = []lipgloss.Color{"1", "2", "3", "4", "5", "6", "9", "10", "11", "12", "13", "14"}
 
+// graphStyles holds pre-computed lipgloss styles for each lane color.
+var graphStyles []lipgloss.Style
+
+// graphStyledChars holds pre-rendered graph characters for each color.
+// Avoids calling lipgloss.Style.Render() (~5µs + 8 allocs) per lane per commit.
+type graphStyledSet struct {
+	commit  string
+	line    string
+	mergeIn string
+}
+
+var graphStyledChars []graphStyledSet
+
+func init() {
+	graphStyles = make([]lipgloss.Style, len(graphColors))
+	graphStyledChars = make([]graphStyledSet, len(graphColors))
+	for i, c := range graphColors {
+		s := lipgloss.NewStyle().Foreground(c)
+		graphStyles[i] = s
+		graphStyledChars[i] = graphStyledSet{
+			commit:  s.Render(graphCommit),
+			line:    s.Render(graphLine),
+			mergeIn: s.Render(graphMergeIn),
+		}
+	}
+}
+
 // GraphLine holds the styled graph prefix for a single commit row.
 type GraphLine struct {
 	Text string // styled string to prepend to the commit line
@@ -71,23 +98,17 @@ func BuildGraph(commits []domain.Commit) []GraphLine {
 			}
 		}
 
-		// Build the graph line for this commit.
+		// Build the graph line for this commit using pre-rendered characters.
 		var parts []string
 		for j := 0; j < len(lanes); j++ {
-			color := graphColors[j%len(graphColors)]
-			style := lipgloss.NewStyle().Foreground(color)
+			styled := graphStyledChars[j%len(graphStyledChars)]
 
 			if j == myLane {
-				parts = append(parts, style.Render(graphCommit))
+				parts = append(parts, styled.commit)
 			} else if containsInt(mergingLanes, j) {
-				// This lane merges into our lane
-				if j > myLane {
-					parts = append(parts, style.Render(graphMergeIn))
-				} else {
-					parts = append(parts, style.Render(graphMergeIn))
-				}
+				parts = append(parts, styled.mergeIn)
 			} else {
-				parts = append(parts, style.Render(graphLine))
+				parts = append(parts, styled.line)
 			}
 		}
 
