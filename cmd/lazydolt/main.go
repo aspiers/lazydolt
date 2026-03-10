@@ -16,10 +16,19 @@ func main() {
 		dir = os.Args[1]
 	}
 
-	runner, err := dolt.NewCLIRunner(dir)
+	var runner dolt.Runner
+	sqlRunner, err := dolt.NewSQLRunner(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		// Fall back to CLI runner if sql-server can't start.
+		fmt.Fprintf(os.Stderr, "Warning: sql-server unavailable (%v), falling back to CLI\n", err)
+		cliRunner, cliErr := dolt.NewCLIRunner(dir)
+		if cliErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
+			os.Exit(1)
+		}
+		runner = cliRunner
+	} else {
+		runner = sqlRunner
 	}
 	defer runner.Close()
 
