@@ -11,6 +11,12 @@ import (
 // RefreshMsg triggers a reload of all data from dolt.
 type RefreshMsg struct{}
 
+// WorkingSetRefreshMsg triggers a reload of only the working set (tables
+// and their status). Use this instead of RefreshMsg for operations that
+// only affect staging state (add, reset, discard), avoiding unnecessary
+// reloads of branches, commits, tags, and remotes.
+type WorkingSetRefreshMsg struct{}
+
 // ErrorMsg carries an error to display to the user.
 type ErrorMsg struct {
 	Err error
@@ -25,6 +31,13 @@ type DataLoadedMsg struct {
 	Commits  []domain.Commit
 	Tags     []domain.Tag
 	Remotes  []domain.Remote
+}
+
+// WorkingSetLoadedMsg carries only table/status data, used for
+// lightweight refreshes after stage/unstage/discard operations.
+type WorkingSetLoadedMsg struct {
+	Tables []domain.Table
+	Dirty  bool
 }
 
 // AddRemoteSuccessMsg is sent when a remote is added.

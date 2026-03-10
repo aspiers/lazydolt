@@ -999,6 +999,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RefreshMsg:
 		cmds = append(cmds, a.loadData())
 
+	case WorkingSetRefreshMsg:
+		cmds = append(cmds, a.loadWorkingSet())
+
+	case WorkingSetLoadedMsg:
+		a.tables.Tables = msg.Tables
+		a.statusBar.Dirty = msg.Dirty
+		a.tables.ClampCursor()
+		cmds = append(cmds, a.autoPreview())
+
 	case ErrorMsg:
 		cmds = append(cmds, a.setFlashError(msg.Err.Error()))
 
@@ -2110,6 +2119,33 @@ func (a *App) loadData() tea.Cmd {
 	}
 }
 
+// loadWorkingSet reloads only the tables and their staging status.
+// This is much faster than loadData() (~200ms vs ~400ms) because it
+// skips branches, commits, tags, and remotes which don't change during
+// stage/unstage/discard operations.
+func (a *App) loadWorkingSet() tea.Cmd {
+	runner := a.runner
+	return func() tea.Msg {
+		tables, err := runner.Tables()
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+
+		dirty := false
+		for _, t := range tables {
+			if t.Status != nil {
+				dirty = true
+				break
+			}
+		}
+
+		return WorkingSetLoadedMsg{
+			Tables: tables,
+			Dirty:  dirty,
+		}
+	}
+}
+
 func (a *App) autoViewDiff() tea.Cmd {
 	if a.focused != components.PanelTables {
 		return nil
@@ -2674,7 +2710,7 @@ func (a *App) stageCmd(table string) tea.Cmd {
 		if err := runner.Add(table); err != nil {
 			return ErrorMsg{Err: err}
 		}
-		return RefreshMsg{}
+		return WorkingSetRefreshMsg{}
 	}
 }
 
@@ -2684,7 +2720,7 @@ func (a *App) unstageCmd(table string) tea.Cmd {
 		if err := runner.Reset(table); err != nil {
 			return ErrorMsg{Err: err}
 		}
-		return RefreshMsg{}
+		return WorkingSetRefreshMsg{}
 	}
 }
 
@@ -2694,7 +2730,7 @@ func (a *App) stageAllCmd() tea.Cmd {
 		if err := runner.AddAll(); err != nil {
 			return ErrorMsg{Err: err}
 		}
-		return RefreshMsg{}
+		return WorkingSetRefreshMsg{}
 	}
 }
 
@@ -2704,7 +2740,7 @@ func (a *App) unstageAllCmd() tea.Cmd {
 		if err := runner.ResetAll(); err != nil {
 			return ErrorMsg{Err: err}
 		}
-		return RefreshMsg{}
+		return WorkingSetRefreshMsg{}
 	}
 }
 
@@ -3286,7 +3322,7 @@ func (a App) updateDiscardConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err := runner.CheckoutTable(table); err != nil {
 				return ErrorMsg{Err: err}
 			}
-			return RefreshMsg{}
+			return WorkingSetRefreshMsg{}
 		}
 	}
 	return a, nil
