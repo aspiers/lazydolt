@@ -159,6 +159,80 @@ func TestSQLRunner_SQLMethodMatchesCLI(t *testing.T) {
 	}
 }
 
+func TestSQLRunner_Mutations(t *testing.T) {
+	repo := testutil.NewDoltTestRepo(t)
+	testutil.PopulateTestData(repo)
+
+	runner, err := NewSQLRunner(repo.Dir)
+	if err != nil {
+		t.Fatalf("NewSQLRunner: %v", err)
+	}
+	defer runner.Close()
+
+	// Test Add + Commit cycle.
+	if err := runner.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+
+	hash, err := runner.Commit("test commit via sql-server")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if hash == "" {
+		t.Error("Commit returned empty hash")
+	}
+	t.Logf("Committed %s", hash)
+
+	// Verify the commit appears in the log.
+	branch, _ := runner.CurrentBranch()
+	commits, err := runner.Log(branch, 1, CommitOrderByDateDesc)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(commits) == 0 {
+		t.Fatal("expected at least one commit in log")
+	}
+	if commits[0].Hash != hash {
+		t.Errorf("latest commit hash = %q, want %q", commits[0].Hash, hash)
+	}
+
+	// Test branch operations.
+	if err := runner.NewBranch("test-branch"); err != nil {
+		t.Fatalf("NewBranch: %v", err)
+	}
+
+	branches, err := runner.Branches(BranchOrderByName)
+	if err != nil {
+		t.Fatalf("Branches: %v", err)
+	}
+	found := false
+	for _, b := range branches {
+		if b.Name == "test-branch" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected to find 'test-branch' in branches")
+	}
+
+	if err := runner.DeleteBranch("test-branch"); err != nil {
+		t.Fatalf("DeleteBranch: %v", err)
+	}
+
+	// Test Schema.
+	schema, err := runner.Schema("users")
+	if err != nil {
+		t.Fatalf("Schema: %v", err)
+	}
+	if schema.TableName != "users" {
+		t.Errorf("Schema.TableName = %q, want %q", schema.TableName, "users")
+	}
+	if schema.CreateStatement == "" {
+		t.Error("expected non-empty CreateStatement")
+	}
+}
+
 func TestSQLRunner_Close(t *testing.T) {
 	repo := testutil.NewDoltTestRepo(t)
 
