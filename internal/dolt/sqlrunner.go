@@ -7,11 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+
+	"github.com/aspiers/lazydolt/internal/domain"
 )
 
 // Compile-time check that SQLRunner implements Runner.
@@ -107,6 +110,137 @@ func (r *SQLRunner) Close() error {
 // methods migrated to SQL in phases 3a/3b).
 func (r *SQLRunner) DB() *sql.DB {
 	return r.db
+}
+
+// SQL overrides CLIRunner.SQL to execute queries via the persistent
+// sql-server connection instead of spawning a subprocess. Returns
+// results in the same []map[string]interface{} format as CLIRunner.
+func (r *SQLRunner) SQL(query string) ([]map[string]interface{}, error) {
+	cmdStr := "dolt sql -r json -q " + query
+	rows, err := r.db.Query(query)
+	if err != nil {
+		r.logCommand(cmdStr, err.Error(), true)
+		return nil, fmt.Errorf("%s: %w", cmdStr, err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("getting columns: %w", err)
+	}
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		// Create a slice of interface{} pointers for scanning.
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		row := make(map[string]interface{}, len(cols))
+		for i, col := range cols {
+			row[col] = normalizeValue(vals[i])
+		}
+		result = append(result, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		r.logCommand(cmdStr, err.Error(), true)
+		return nil, err
+	}
+
+	r.logCommand(cmdStr, fmt.Sprintf("%d rows", len(result)), false)
+	return result, nil
+}
+
+// normalizeValue converts SQL driver values to the types that callers
+// expect (matching the JSON parsing behavior of CLIRunner.SQL).
+// JSON numbers come back as float64, strings as string, etc.
+func normalizeValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case []byte:
+		return string(val)
+	case int64:
+		return float64(val) // match JSON number behavior
+	case uint64:
+		return float64(val)
+	case int32:
+		return float64(val)
+	case float32:
+		return float64(val)
+	default:
+		return val
+	}
+}
+
+// SQLRaw overrides CLIRunner.SQLRaw. For now, this delegates to the
+// CLI because the tabular format is hard to replicate from raw SQL rows.
+// The performance impact is minimal since SQLRaw is only used for
+// user-initiated SQL queries, not for data loading.
+func (r *SQLRunner) SQLRaw(query string) (string, error) {
+	return r.CLIRunner.SQLRaw(query)
+}
+
+// Tables overrides CLIRunner.Tables to use SQL queries instead of
+// "dolt ls" + "dolt sql ... dolt_status" CLI calls.
+func (r *SQLRunner) Tables() ([]domain.Table, error) {
+	// Get table names via SHOW TABLES.
+	tableRows, err := r.db.Query("SHOW TABLES")
+	if err != nil {
+		return nil, fmt.Errorf("SHOW TABLES: %w", err)
+	}
+	defer tableRows.Close()
+
+	var names []string
+	for tableRows.Next() {
+		var name string
+		if err := tableRows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if err := tableRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Get status via SQL() (which now uses the sql-server connection).
+	statusEntries, err := r.Status()
+	if err != nil {
+		return nil, err
+	}
+
+	statusMap := make(map[string]*domain.StatusEntry)
+	for i := range statusEntries {
+		statusMap[statusEntries[i].TableName] = &statusEntries[i]
+	}
+
+	// Include tables from status that aren't in SHOW TABLES (e.g. deleted).
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		seen[name] = true
+	}
+	for _, e := range statusEntries {
+		if !seen[e.TableName] {
+			names = append(names, e.TableName)
+		}
+	}
+
+	sort.Strings(names)
+
+	tables := make([]domain.Table, 0, len(names))
+	for _, name := range names {
+		t := domain.Table{Name: name}
+		if st, ok := statusMap[name]; ok {
+			t.Status = st
+		}
+		tables = append(tables, t)
+	}
+
+	return tables, nil
 }
 
 // readServerInfo parses .dolt/sql-server.info if it exists.

@@ -73,6 +73,92 @@ func TestSQLRunner_RepoDir(t *testing.T) {
 	}
 }
 
+func TestSQLRunner_SQLMethodMatchesCLI(t *testing.T) {
+	repo := testutil.NewDoltTestRepo(t)
+	testutil.PopulateTestData(repo)
+
+	sqlRunner, err := NewSQLRunner(repo.Dir)
+	if err != nil {
+		t.Fatalf("NewSQLRunner: %v", err)
+	}
+	defer sqlRunner.Close()
+
+	cliRunner := sqlRunner.CLIRunner
+
+	// Compare Status() results (both use SQL() internally).
+	sqlStatus, err := sqlRunner.Status()
+	if err != nil {
+		t.Fatalf("SQLRunner.Status: %v", err)
+	}
+	cliStatus, err := cliRunner.Status()
+	if err != nil {
+		t.Fatalf("CLIRunner.Status: %v", err)
+	}
+	if len(sqlStatus) != len(cliStatus) {
+		t.Errorf("Status: SQL returned %d entries, CLI returned %d", len(sqlStatus), len(cliStatus))
+	}
+
+	// Compare CurrentBranch() results.
+	sqlBranch, err := sqlRunner.CurrentBranch()
+	if err != nil {
+		t.Fatalf("SQLRunner.CurrentBranch: %v", err)
+	}
+	cliBranch, err := cliRunner.CurrentBranch()
+	if err != nil {
+		t.Fatalf("CLIRunner.CurrentBranch: %v", err)
+	}
+	if sqlBranch != cliBranch {
+		t.Errorf("CurrentBranch: SQL=%q, CLI=%q", sqlBranch, cliBranch)
+	}
+
+	// Compare Branches() results.
+	sqlBranches, err := sqlRunner.Branches(BranchOrderByDate)
+	if err != nil {
+		t.Fatalf("SQLRunner.Branches: %v", err)
+	}
+	cliBranches, err := cliRunner.Branches(BranchOrderByDate)
+	if err != nil {
+		t.Fatalf("CLIRunner.Branches: %v", err)
+	}
+	if len(sqlBranches) != len(cliBranches) {
+		t.Errorf("Branches: SQL returned %d, CLI returned %d", len(sqlBranches), len(cliBranches))
+	} else {
+		for i := range sqlBranches {
+			if sqlBranches[i].Name != cliBranches[i].Name {
+				t.Errorf("Branch[%d].Name: SQL=%q, CLI=%q", i, sqlBranches[i].Name, cliBranches[i].Name)
+			}
+			if sqlBranches[i].IsCurrent != cliBranches[i].IsCurrent {
+				t.Errorf("Branch[%d].IsCurrent: SQL=%v, CLI=%v", i, sqlBranches[i].IsCurrent, cliBranches[i].IsCurrent)
+			}
+		}
+	}
+
+	// Compare Tables() results.
+	sqlTables, err := sqlRunner.Tables()
+	if err != nil {
+		t.Fatalf("SQLRunner.Tables: %v", err)
+	}
+	cliTables, err := cliRunner.Tables()
+	if err != nil {
+		t.Fatalf("CLIRunner.Tables: %v", err)
+	}
+	if len(sqlTables) != len(cliTables) {
+		t.Errorf("Tables: SQL returned %d, CLI returned %d", len(sqlTables), len(cliTables))
+		for _, st := range sqlTables {
+			t.Logf("  SQL table: %s (status=%v)", st.Name, st.Status != nil)
+		}
+		for _, ct := range cliTables {
+			t.Logf("  CLI table: %s (status=%v)", ct.Name, ct.Status != nil)
+		}
+	} else {
+		for i := range sqlTables {
+			if sqlTables[i].Name != cliTables[i].Name {
+				t.Errorf("Table[%d].Name: SQL=%q, CLI=%q", i, sqlTables[i].Name, cliTables[i].Name)
+			}
+		}
+	}
+}
+
 func TestSQLRunner_Close(t *testing.T) {
 	repo := testutil.NewDoltTestRepo(t)
 
