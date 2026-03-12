@@ -27,16 +27,19 @@ func main() {
 		dir = flag.Arg(0)
 	}
 
-	var runner dolt.Runner
-	sqlRunner, err := dolt.NewSQLRunner(dir)
+	// Validate the repo first — no point trying sql-server or CLI
+	// fallback if it's not a dolt repository.
+	cliRunner, err := dolt.NewCLIRunner(dir)
 	if err != nil {
-		// Fall back to CLI runner if sql-server can't start.
-		fmt.Fprintf(os.Stderr, "Warning: sql-server unavailable (%v), falling back to CLI\n", err)
-		cliRunner, cliErr := dolt.NewCLIRunner(dir)
-		if cliErr != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", cliErr)
-			os.Exit(1)
-		}
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var runner dolt.Runner
+	sqlRunner, err := dolt.NewSQLRunnerFrom(cliRunner)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Falling back to CLI runner.\n")
 		runner = cliRunner
 	} else {
 		runner = sqlRunner

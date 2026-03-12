@@ -40,13 +40,20 @@ type serverInfo struct {
 // NewSQLRunner creates a Runner backed by a dolt sql-server.
 // It first tries to connect to an existing sql-server for the repo,
 // then falls back to starting a new one. If the sql-server cannot
-// be started or connected to, it returns an error.
+// be started or connected to, it returns an error that includes
+// diagnostics from each failed attempt, one per line.
 func NewSQLRunner(repoDir string) (*SQLRunner, error) {
 	cli, err := NewCLIRunner(repoDir)
 	if err != nil {
 		return nil, err
 	}
+	return NewSQLRunnerFrom(cli)
+}
 
+// NewSQLRunnerFrom creates a Runner backed by a dolt sql-server,
+// using an existing CLIRunner. This avoids redundant repo validation
+// when the caller already has a valid CLIRunner to fall back to.
+func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 	dbName := filepath.Base(cli.repoDir)
 
 	r := &SQLRunner{
@@ -54,9 +61,21 @@ func NewSQLRunner(repoDir string) (*SQLRunner, error) {
 		dbName:    dbName,
 	}
 
+	// Collect diagnostic messages from each failed attempt.
+	var diagnostics []string
+
 	// Try connecting to an existing sql-server first.
-	if info, err := r.readServerInfo(); err == nil {
-		if db, err := r.connectToServer(info.port); err == nil {
+	info, err := r.readServerInfo()
+	if err != nil {
+		diagnostics = append(diagnostics,
+			fmt.Sprintf("no existing sql-server: %v", err))
+	} else {
+		db, err := r.connectToServer(info.port)
+		if err != nil {
+			diagnostics = append(diagnostics,
+				fmt.Sprintf("existing sql-server (pid %d, port %d) not reachable: %v",
+					info.pid, info.port, err))
+		} else {
 			r.db = db
 			r.serverPort = info.port
 			r.injectSQLFunc()
@@ -67,24 +86,41 @@ func NewSQLRunner(repoDir string) (*SQLRunner, error) {
 	// No existing server — start our own.
 	port, err := r.findFreePort()
 	if err != nil {
-		return nil, fmt.Errorf("finding free port for sql-server: %w", err)
+		diagnostics = append(diagnostics,
+			fmt.Sprintf("finding free port: %v", err))
+		return nil, formatSQLRunnerError(diagnostics)
 	}
 
 	if err := r.startServer(port); err != nil {
-		return nil, fmt.Errorf("starting dolt sql-server: %w", err)
+		diagnostics = append(diagnostics,
+			fmt.Sprintf("starting new sql-server: %v", err))
+		return nil, formatSQLRunnerError(diagnostics)
 	}
 
 	db, err := r.connectToServer(port)
 	if err != nil {
 		// Clean up the server we just started.
 		r.stopServer()
-		return nil, fmt.Errorf("connecting to dolt sql-server: %w", err)
+		diagnostics = append(diagnostics,
+			fmt.Sprintf("started new sql-server on port %d but cannot connect: %v",
+				port, err))
+		return nil, formatSQLRunnerError(diagnostics)
 	}
 
 	r.db = db
 	r.serverPort = port
 	r.injectSQLFunc()
 	return r, nil
+}
+
+// formatSQLRunnerError builds a multi-line error from diagnostic steps.
+func formatSQLRunnerError(diagnostics []string) error {
+	var b strings.Builder
+	b.WriteString("sql-server unavailable:")
+	for i, d := range diagnostics {
+		b.WriteString(fmt.Sprintf("\n  %d. %s", i+1, d))
+	}
+	return fmt.Errorf("%s", b.String())
 }
 
 // injectSQLFunc replaces the embedded CLIRunner's sqlFunc with the
