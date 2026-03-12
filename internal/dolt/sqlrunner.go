@@ -1,6 +1,7 @@
 package dolt
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"net"
@@ -24,11 +25,12 @@ var _ Runner = (*SQLRunner)(nil)
 // connected over MySQL protocol. Operations not yet migrated to SQL
 // fall back to the embedded CLIRunner.
 type SQLRunner struct {
-	*CLIRunner           // embedded for CLI fallback
-	db         *sql.DB   // MySQL connection pool
-	serverCmd  *exec.Cmd // nil if we connected to an existing server
-	serverPort int
-	dbName     string // database name (directory basename)
+	*CLIRunner                 // embedded for CLI fallback
+	db           *sql.DB       // MySQL connection pool
+	serverCmd    *exec.Cmd     // nil if we connected to an existing server
+	serverOutput *bytes.Buffer // captures stdout+stderr from server process we started
+	serverPort   int
+	dbName       string // database name (directory basename)
 }
 
 // serverInfo holds parsed .dolt/sql-server.info data.
@@ -99,11 +101,33 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 
 	db, err := r.connectToServer(port)
 	if err != nil {
-		// Clean up the server we just started.
 		r.stopServer()
+		// Check if the server wrote anything useful (e.g. lock conflict).
+		if r.serverOutput != nil {
+			if msg := strings.TrimSpace(r.serverOutput.String()); msg != "" {
+				// Filter out the startup banner line, keeping only
+				// substantive output.
+				var lines []string
+				for _, line := range strings.Split(msg, "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" && !strings.HasPrefix(line, "Starting server with Config") {
+						lines = append(lines, line)
+					}
+				}
+				if len(lines) > 0 {
+					serverMsg := strings.Join(lines, "\n     ")
+					diagnostics = append(diagnostics,
+						fmt.Sprintf("new sql-server on port %d failed: %s",
+							port, serverMsg))
+					if strings.Contains(msg, "is locked by another dolt process") {
+						return nil, &DatabaseLockedError{Diagnostics: diagnostics}
+					}
+					return nil, formatSQLRunnerError(diagnostics)
+				}
+			}
+		}
 		diagnostics = append(diagnostics,
-			fmt.Sprintf("started new sql-server on port %d but cannot connect: %v",
-				port, err))
+			fmt.Sprintf("new sql-server on port %d not reachable: %v", port, err))
 		return nil, formatSQLRunnerError(diagnostics)
 	}
 
@@ -113,14 +137,28 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 	return r, nil
 }
 
+// DatabaseLockedError indicates the database is locked by another
+// dolt process and cannot be used even in CLI fallback mode.
+type DatabaseLockedError struct {
+	Diagnostics []string
+}
+
+func (e *DatabaseLockedError) Error() string {
+	return formatDiagnostics(e.Diagnostics)
+}
+
 // formatSQLRunnerError builds a multi-line error from diagnostic steps.
 func formatSQLRunnerError(diagnostics []string) error {
+	return fmt.Errorf("%s", formatDiagnostics(diagnostics))
+}
+
+func formatDiagnostics(diagnostics []string) string {
 	var b strings.Builder
 	b.WriteString("sql-server unavailable:")
 	for i, d := range diagnostics {
 		b.WriteString(fmt.Sprintf("\n  %d. %s", i+1, d))
 	}
-	return fmt.Errorf("%s", b.String())
+	return b.String()
 }
 
 // injectSQLFunc replaces the embedded CLIRunner's sqlFunc with the
@@ -311,16 +349,6 @@ func (r *SQLRunner) readServerInfo() (*serverInfo, error) {
 		return nil, fmt.Errorf("parsing port from sql-server.info: %w", err)
 	}
 
-	// Verify the process is still running.
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return nil, fmt.Errorf("process %d not found: %w", pid, err)
-	}
-	// On Unix, FindProcess always succeeds. Send signal 0 to check.
-	if err := proc.Signal(os.Signal(nil)); err != nil {
-		return nil, fmt.Errorf("process %d not running: %w", pid, err)
-	}
-
 	return &serverInfo{pid: pid, port: port}, nil
 }
 
@@ -343,15 +371,16 @@ func (r *SQLRunner) startServer(port int) error {
 		"--loglevel", "warning",
 	)
 	cmd.Dir = r.repoDir
-	// Discard stdout/stderr — server logs to its own log.
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting sql-server on port %d: %w", port, err)
 	}
 
 	r.serverCmd = cmd
+	r.serverOutput = &output
 	r.logCommand(fmt.Sprintf("dolt sql-server -P %d (pid %d)", port, cmd.Process.Pid), "", false)
 	return nil
 }

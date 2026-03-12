@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -38,6 +39,11 @@ func main() {
 	var runner dolt.Runner
 	sqlRunner, err := dolt.NewSQLRunnerFrom(cliRunner)
 	if err != nil {
+		var locked *dolt.DatabaseLockedError
+		if errors.As(err, &locked) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Falling back to CLI runner.\n")
 		runner = cliRunner
