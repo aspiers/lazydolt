@@ -138,3 +138,9 @@ type UndoEntry struct {
 	Hash        string // HEAD hash before the operation
 	Description string // human-readable description (e.g. "commit: Fix bug")
 }
+
+// ServerInfo describes the sql-server connection, if any.
+type ServerInfo struct {
+	Port int // TCP port of the sql-server
+	Pid  int // process ID (0 if unknown, e.g. external server)
+}

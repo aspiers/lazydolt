@@ -962,6 +962,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.statusBar.Dirty = msg.Dirty
 		a.statusBar.RepoDir = a.repoName
 		a.statusBar.ParentDir = a.repoParent
+		a.statusBar.ServerInfo = a.runner.ServerInfo()
 		a.tables.Tables = msg.Tables
 		a.branches.Branches = msg.Branches
 		a.branches.Tags = msg.Tags

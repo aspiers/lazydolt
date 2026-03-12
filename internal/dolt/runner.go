@@ -199,6 +199,11 @@ func (r *CLIRunner) DiffStatBetween(fromRef, toRef string) ([]domain.DiffStatEnt
 	return entries, nil
 }
 
+// ServerInfo returns nil for CLIRunner (no sql-server connection).
+func (r *CLIRunner) ServerInfo() *domain.ServerInfo {
+	return nil
+}
+
 // Close is a no-op for CLIRunner (no persistent resources to release).
 func (r *CLIRunner) Close() error {
 	return nil

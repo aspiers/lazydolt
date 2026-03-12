@@ -30,6 +30,7 @@ type SQLRunner struct {
 	serverCmd    *exec.Cmd     // nil if we connected to an existing server
 	serverOutput *bytes.Buffer // captures stdout+stderr from server process we started
 	serverPort   int
+	serverPid    int      // PID of the server (0 if unknown)
 	dbName       string   // database name (directory basename)
 	warnings     []string // diagnostic warnings from startup
 }
@@ -81,6 +82,7 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 		} else {
 			r.db = db
 			r.serverPort = info.port
+			r.serverPid = info.pid
 			r.injectSQLFunc()
 			return r, nil
 		}
@@ -122,13 +124,15 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 							port, serverMsg))
 					if strings.Contains(msg, "is locked by another dolt process") {
 						// Try to discover the running server.
-						if discoveredPort, err := r.discoverServer(); err == nil {
-							if db, err := r.connectToServer(discoveredPort); err == nil {
+						if discovered, err := r.discoverServer(); err == nil {
+							if db, err := r.connectToServer(discovered.port); err == nil {
 								r.db = db
-								r.serverPort = discoveredPort
+								r.serverPort = discovered.port
+								r.serverPid = discovered.pid
 								r.injectSQLFunc()
 								diagnostics = append(diagnostics,
-									fmt.Sprintf("discovered running server on port %d", discoveredPort))
+									fmt.Sprintf("discovered running server on port %d (pid %d)",
+										discovered.port, discovered.pid))
 								r.warnings = diagnostics
 								return r, nil
 							}
@@ -146,6 +150,9 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 
 	r.db = db
 	r.serverPort = port
+	if r.serverCmd != nil && r.serverCmd.Process != nil {
+		r.serverPid = r.serverCmd.Process.Pid
+	}
 	r.injectSQLFunc()
 	return r, nil
 }
@@ -174,6 +181,14 @@ func formatDiagnostics(diagnostics []string) string {
 	return b.String()
 }
 
+// ServerInfo returns details about the sql-server connection.
+func (r *SQLRunner) ServerInfo() *domain.ServerInfo {
+	return &domain.ServerInfo{
+		Port: r.serverPort,
+		Pid:  r.serverPid,
+	}
+}
+
 // Warnings returns diagnostic messages from startup. These are
 // non-fatal issues encountered while connecting (e.g. stale info file
 // that required server discovery). Empty if startup was clean.
@@ -182,19 +197,19 @@ func (r *SQLRunner) Warnings() []string {
 }
 
 // discoverServer scans running processes to find a dolt sql-server
-// serving our repository. Returns the port if found.
+// serving our repository. Returns the server info (pid and port) if found.
 // This is used as a fallback when the database is locked but we
 // couldn't connect via sql-server.info.
-func (r *SQLRunner) discoverServer() (int, error) {
+func (r *SQLRunner) discoverServer() (*serverInfo, error) {
 	absRepoDir, err := filepath.Abs(r.repoDir)
 	if err != nil {
-		return 0, fmt.Errorf("resolving repo path: %w", err)
+		return nil, fmt.Errorf("resolving repo path: %w", err)
 	}
 
 	// Read /proc to find dolt sql-server processes.
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return 0, fmt.Errorf("reading /proc: %w", err)
+		return nil, fmt.Errorf("reading /proc: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -227,11 +242,11 @@ func (r *SQLRunner) discoverServer() (int, error) {
 
 		port := extractPort(args)
 		if port > 0 {
-			return port, nil
+			return &serverInfo{pid: pid, port: port}, nil
 		}
 	}
 
-	return 0, fmt.Errorf("no dolt sql-server process found for %s", absRepoDir)
+	return nil, fmt.Errorf("no dolt sql-server process found for %s", absRepoDir)
 }
 
 // isDoltSQLServer checks if a process cmdline represents a dolt sql-server.

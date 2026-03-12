@@ -123,6 +123,10 @@ type Runner interface {
 	// Command log (for TUI display)
 	CommandLog() []domain.CommandLogEntry
 
+	// ServerInfo returns details about the sql-server connection, or nil
+	// if not connected to a sql-server (e.g. CLI-only mode).
+	ServerInfo() *domain.ServerInfo
+
 	// Close releases resources (e.g. database connections, child processes).
 	// CLIRunner's Close is a no-op. SQLRunner stops the sql-server process.
 	Close() error
