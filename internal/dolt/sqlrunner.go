@@ -30,7 +30,8 @@ type SQLRunner struct {
 	serverCmd    *exec.Cmd     // nil if we connected to an existing server
 	serverOutput *bytes.Buffer // captures stdout+stderr from server process we started
 	serverPort   int
-	dbName       string // database name (directory basename)
+	dbName       string   // database name (directory basename)
+	warnings     []string // diagnostic warnings from startup
 }
 
 // serverInfo holds parsed .dolt/sql-server.info data.
@@ -120,6 +121,18 @@ func NewSQLRunnerFrom(cli *CLIRunner) (*SQLRunner, error) {
 						fmt.Sprintf("new sql-server on port %d failed: %s",
 							port, serverMsg))
 					if strings.Contains(msg, "is locked by another dolt process") {
+						// Try to discover the running server.
+						if discoveredPort, err := r.discoverServer(); err == nil {
+							if db, err := r.connectToServer(discoveredPort); err == nil {
+								r.db = db
+								r.serverPort = discoveredPort
+								r.injectSQLFunc()
+								diagnostics = append(diagnostics,
+									fmt.Sprintf("discovered running server on port %d", discoveredPort))
+								r.warnings = diagnostics
+								return r, nil
+							}
+						}
 						return nil, &DatabaseLockedError{Diagnostics: diagnostics}
 					}
 					return nil, formatSQLRunnerError(diagnostics)
@@ -159,6 +172,99 @@ func formatDiagnostics(diagnostics []string) string {
 		b.WriteString(fmt.Sprintf("\n  %d. %s", i+1, d))
 	}
 	return b.String()
+}
+
+// Warnings returns diagnostic messages from startup. These are
+// non-fatal issues encountered while connecting (e.g. stale info file
+// that required server discovery). Empty if startup was clean.
+func (r *SQLRunner) Warnings() []string {
+	return r.warnings
+}
+
+// discoverServer scans running processes to find a dolt sql-server
+// serving our repository. Returns the port if found.
+// This is used as a fallback when the database is locked but we
+// couldn't connect via sql-server.info.
+func (r *SQLRunner) discoverServer() (int, error) {
+	absRepoDir, err := filepath.Abs(r.repoDir)
+	if err != nil {
+		return 0, fmt.Errorf("resolving repo path: %w", err)
+	}
+
+	// Read /proc to find dolt sql-server processes.
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, fmt.Errorf("reading /proc: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue // not a PID directory
+		}
+
+		// Check if this process's cwd matches our repo.
+		cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+		if err != nil {
+			continue // can't read (permission denied, or process gone)
+		}
+		if cwd != absRepoDir {
+			continue
+		}
+
+		// Read cmdline to verify it's a dolt sql-server and extract port.
+		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		if err != nil {
+			continue
+		}
+		args := strings.Split(string(cmdline), "\x00")
+		if !isDoltSQLServer(args) {
+			continue
+		}
+
+		port := extractPort(args)
+		if port > 0 {
+			return port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no dolt sql-server process found for %s", absRepoDir)
+}
+
+// isDoltSQLServer checks if a process cmdline represents a dolt sql-server.
+func isDoltSQLServer(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	// The binary could be "dolt" or "/path/to/dolt".
+	base := filepath.Base(args[0])
+	return base == "dolt" && args[1] == "sql-server"
+}
+
+// extractPort finds the port from dolt sql-server command-line args.
+// Handles both "-P PORT" and "--port PORT" / "--port=PORT".
+func extractPort(args []string) int {
+	for i, arg := range args {
+		switch {
+		case (arg == "-P" || arg == "--port") && i+1 < len(args):
+			if p, err := strconv.Atoi(args[i+1]); err == nil {
+				return p
+			}
+		case strings.HasPrefix(arg, "--port="):
+			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "--port=")); err == nil {
+				return p
+			}
+		case strings.HasPrefix(arg, "-P="):
+			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "-P=")); err == nil {
+				return p
+			}
+		}
+	}
+	// Default dolt sql-server port if not specified.
+	return 3306
 }
 
 // injectSQLFunc replaces the embedded CLIRunner's sqlFunc with the

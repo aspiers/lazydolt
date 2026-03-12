@@ -48,6 +48,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Falling back to CLI runner.\n")
 		runner = cliRunner
 	} else {
+		// Show any warnings from startup (e.g. server discovery).
+		if warnings := sqlRunner.Warnings(); len(warnings) > 0 {
+			fmt.Fprintf(os.Stderr, "Warning: connected to sql-server, but with issues:\n")
+			for i, w := range warnings {
+				fmt.Fprintf(os.Stderr, "  %d. %s\n", i+1, w)
+			}
+		}
 		runner = sqlRunner
 	}
 	defer runner.Close()
